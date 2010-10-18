@@ -15,8 +15,8 @@
 
 如果，你想在vim中将@en开头的行也作为注释进行语法高亮显示，则可以新建一个文件，并增加两行命令，如下，
 
-$ cat ~/.vim/after/syntax/texinfo.vim
-syn match texinfoComment  "@en .*"
-syn match texinfoComment  "@en$"
+  $ cat ~/.vim/after/syntax/texinfo.vim
+  syn match texinfoComment  "@en .*"
+  syn match texinfoComment  "@en$"
 
 即可。
