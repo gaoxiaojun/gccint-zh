@@ -1,13 +1,14 @@
 为了方便文档翻译和更新，这里列出了一些需要注意的事项。
 
-= 定义新的宏 =
+= 宏命令 =
 
-在include/gcc-common.texi中，新增加了几个宏定义。这包括
+在include/gcc-common.texi中，有一些重定义的，或者新增加的宏命令。这包括
 
+  * @xref和@pxref。这些命令在英文文档中是生成“See ...”，现在重定义为生成"参见 ..."。
+  * @en。该命令是@c的别名，是一个注释命令，用来标记texi文档中的英语原文。
 
-= Details =
+在翻译文档中保留原来的英语原文，并使用@en来注释标记，这样的好处是便于和gcc（特别是trunk）的文档进行对比更新。比如，执行如下命令，
 
-Add your content here.  Format your content with:
-  * Text in *bold* or _italic_
-  * Headings, paragraphs, and lists
-  * Automatic links to other wiki pages
+  $ cat collect2.texi | sed 's/@en //' | diff - trunk/gcc/doc/collect2.texi -B | less
+
+你将会看到，翻译文档和原文文档之间的差别只有中文翻译，这说明，英语原文是与trunk中的相同。而如果文档之间还有英文差别，则说明，英语原文与trunk中的不同。从而，可以快速的查找到需要更新的地方。
