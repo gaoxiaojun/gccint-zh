@@ -17,7 +17,7 @@
 
   $ cat ~/.vim/after/syntax/texinfo.vim
 
-  syn match texinfoComment  "@en .*"
+  syn match texinfoComment  "@en .\*"
 
   syn match texinfoComment  "@en$"
 
