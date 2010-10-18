@@ -12,3 +12,11 @@
   $ cat collect2.texi | sed 's/@en //' | diff - trunk/gcc/doc/collect2.texi -B | less
 
 你将会看到，翻译文档和原文文档之间的差别只有中文翻译，这说明，英语原文是与trunk中的相同。而如果文档之间还有英文差别，则说明，英语原文与trunk中的不同。从而，可以快速的查找到需要更新的地方。
+
+如果，你想在vim中将@en开头的行也作为注释进行语法高亮显示，则可以新建一个文件，并增加两行命令，如下，
+
+$ cat ~/.vim/after/syntax/texinfo.vim
+syn match texinfoComment  "@en .*"
+syn match texinfoComment  "@en$"
+
+即可。
