@@ -1,0 +1,13 @@
+为了方便文档翻译和更新，这里列出了一些需要注意的事项。
+
+= 定义新的宏 =
+
+在include/gcc-common.texi中，新增加了几个宏定义。这包括
+
+
+= Details =
+
+Add your content here.  Format your content with:
+  * Text in *bold* or _italic_
+  * Headings, paragraphs, and lists
+  * Automatic links to other wiki pages
