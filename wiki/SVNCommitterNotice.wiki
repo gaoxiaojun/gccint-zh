@@ -12,7 +12,7 @@ GCCINT-ZH-GLOSSARY中列出了中英文对照词汇，用来统一翻译中的�
 
 在include/gcc-common.texi中，重定义了宏命令@xref和@pxref。这些命令在英文文档中是自动生成“See ...”，现在重定义为自动生成"参见 ..."。
 
-== 宏命令en ==
+== 宏命令@en ==
 
 该命令是@c的别名，是一个注释命令，用来标记texi文档中的英语原文。在翻译文档中保留原来的英语原文，并使用@en来注释标记，这样的好处是便于和gcc（特别是trunk）的文档进行对比更新。比如，执行如下命令，
 {{{
@@ -27,6 +27,19 @@ GCCINT-ZH-GLOSSARY中列出了中英文对照词汇，用来统一翻译中的�
   syn match texinfoComment  "@en$"
 }}}
 即可。
+
+== 宏命令@term ==
+
+一些关键术语，为了便于统一和以后的修改，可以使用@term宏来表示。比如对于pass，可以翻译成"遍"，或者直接不翻译。对于predicate，现在是翻译成“断言”，也许以后会有更好的译法。
+
+可以在include/gcc-common.texi中定义一个term变量，并赋值。例如，
+
+@set term_pass pass
+@set term_predicate 断言
+
+然后，在文章中使用@term{pass}和@term{predicate}。这样，它们将会被替换为“pass”和“断言”。
+
+所有的这些术语，应该在GCCINT-ZH-GLOSSARY中列出，以便查看。
 
 == 换行 ==
 
