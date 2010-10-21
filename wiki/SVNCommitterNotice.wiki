@@ -33,10 +33,10 @@ GCCINT-ZH-GLOSSARY中列出了中英文对照词汇，用来统一翻译中的�
 一些关键术语，为了便于统一和以后的修改，可以使用@term宏来表示。比如对于pass，可以翻译成"遍"，或者直接不翻译。对于predicate，现在是翻译成“断言”，也许以后会有更好的译法。
 
 可以在include/gcc-common.texi中定义一个term变量，并赋值。例如，
-
+{{{
 @set term_pass pass
 @set term_predicate 断言
-
+}}}
 然后，在文章中使用@term{pass}和@term{predicate}。这样，它们将会被替换为“pass”和“断言”。
 
 所有的这些术语，应该在GCCINT-ZH-GLOSSARY中列出，以便查看。
