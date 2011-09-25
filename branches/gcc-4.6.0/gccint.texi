@@ -1,0 +1,259 @@
+\input texinfo  @c -*-texinfo-*-
+@c %**start of header
+@setfilename gccint.info
+@documentlanguage zh_CN
+@c INTERNALS is used by md.texi to determine whether to include the
+@c whole of that file, in the internals manual, or only the part
+@c dealing with constraints, in the user manual.
+@set INTERNALS
+
+@c See miscellaneous notes in gcc.texi on checks/things to do.
+
+@include gcc-common.texi
+
+@settitle GNU Compiler Collection (GCC) Internals
+
+@c Create a separate index for command line options.
+@defcodeindex op
+@c Merge the standard indexes into a single one.
+@syncodeindex fn cp
+@syncodeindex vr cp
+@syncodeindex ky cp
+@syncodeindex pg cp
+@syncodeindex tp cp
+
+@paragraphindent 1
+
+@c %**end of header
+
+@copying
+@en Copyright @copyright{} 1988, 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
+@en 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007,
+@en 2008, 2010 Free Software Foundation, Inc.
+版权 @copyright{} 1988, 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
+1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2010 自由软件基金会
+
+@en Permission is granted to copy, distribute and/or modify this document
+@en under the terms of the GNU Free Documentation License, Version 1.3 or
+@en any later version published by the Free Software Foundation; with the
+@en Invariant Sections being ``Funding Free Software'', the Front-Cover
+@en Texts being (a) (see below), and with the Back-Cover Texts being (b)
+@en (see below).  A copy of the license is included in the section entitled
+@en ``GNU Free Documentation License''.
+您可以依据自由软件基金会所发行的GNU自由文档授权1.3版本或者之后的任何版本，对本文档进行复制，分发和/或修改；其中不可变章节为"资助自由软件"，封面文字为 (a) (参见下面)，以及封底文字为 (b) (参见下面)。授权的副本要被包含在标题为"GNU自由文档授权"的章节中。
+
+@en (a) The FSF's Front-Cover Text is:
+@en 
+@en      A GNU Manual
+@en 
+@en (b) The FSF's Back-Cover Text is:
+@en 
+@en      You have freedom to copy and modify this GNU Manual, like GNU
+@en      software.  Copies published by the Free Software Foundation raise
+@en      funds for GNU development.
+(a) FSF的封面文字为：
+
+     GNU 手册
+
+(b) FSF的封底文字为：
+
+     您可以自由复制和修改本GNU手册，如同GNU软件。由自由软件基金会所发行的副本用于为GNU开发筹集资金。
+@end copying
+@ifnottex
+@dircategory Software development
+@direntry
+* gccint: (gccint).            Internals of the GNU Compiler Collection.
+@end direntry
+@en This file documents the internals of the GNU compilers.
+该文档介绍了GNU编译器的内部实现。
+@sp 1
+@insertcopying
+@sp 1
+@end ifnottex
+
+@setchapternewpage odd
+@titlepage
+@title GNU Compiler Collection Internals
+@versionsubtitle
+@author Richard M. Stallman and the @sc{GCC} Developer Community
+@page
+@vskip 0pt plus 1filll
+@insertcopying
+@end titlepage
+@summarycontents
+@contents
+@page
+
+@en @node Top, Contributing,, (DIR)
+@en @top Introduction
+@en @cindex introduction
+@node Top, Contributing,, (DIR)
+@top 简介
+@cindex introduction
+
+@en This manual documents the internals of the GNU compilers, including
+@en how to port them to new targets and some information about how to
+@en write front ends for new languages.  It corresponds to the compilers
+@en @ifset VERSION_PACKAGE
+@en @value{VERSION_PACKAGE}
+@en @end ifset
+@en version @value{version-GCC}.  The use of the GNU compilers is documented in a
+@en separate manual.  @xref{Top,, Introduction, gcc, Using the GNU
+@en Compiler Collection (GCC)}.
+本手册介绍了GNU编译器的内部实现，包括怎样移植到新的目标机上，以及一些如何为新语言编写前端的信息。手册基于编译器（GCC）版本4.6.0（revision 170041）。GNU编译器的使用方法在另一个手册中介绍，@xref{Top,, Introduction, gcc, Using the GNU Compiler Collection (GCC)}。
+
+@en This manual is mainly a reference manual rather than a tutorial.  It
+@en discusses how to contribute to GCC (@pxref{Contributing}), the
+@en characteristics of the machines supported by GCC as hosts and targets
+@en (@pxref{Portability}), how GCC relates to the ABIs on such systems
+@en (@pxref{Interface}), and the characteristics of the languages for
+@en which GCC front ends are written (@pxref{Languages}).  It then
+@en describes the GCC source tree structure and build system, some of the
+@en interfaces to GCC front ends, and how support for a target system is
+@en implemented in GCC@.
+本手册主要是一个参考手册而不是教程。它讨论了如何帮助GCC (@pxref{Contributing})，GCC所支持的主机和目标机的机器特征(@pxref{Portability})，GCC与这些系统的ABI是如何联系的(@pxref{Interface})，GCC前端所支持的语言特征(@pxref{Languages})。然后描述了GCC源文件目录结构和构建系统，GCC前端的一些接口，以及GCC如何实现对目标系统的支持。
+
+@en Additional tutorial information is linked to from
+@en @uref{http://gcc.gnu.org/readings.html}.
+更多参考资料的链接在@uref{http://gcc.gnu.org/readings.html}上。
+
+@en @menu
+@en * Contributing::    How to contribute to testing and developing GCC.
+@en * Portability::     Goals of GCC's portability features.
+@en * Interface::       Function-call interface of GCC output.
+@en * Libgcc::          Low-level runtime library used by GCC.
+@en * Languages::       Languages for which GCC front ends are written.
+@en * Source Tree::     GCC source tree structure and build system.
+@en * Testsuites::      GCC testsuites.
+@en * Options::         Option specification files.
+@en * Passes::          Order of passes, what they do, and what each file is for.
+@en * GENERIC::         Language-independent representation generated by Front Ends
+@en * GIMPLE::          Tuple representation used by Tree SSA optimizers
+@en * Tree SSA::        Analysis and optimization of GIMPLE
+@en * RTL::             Machine-dependent low-level intermediate representation.
+@en * Control Flow::    Maintaining and manipulating the control flow graph.
+@en * Loop Analysis and Representation:: Analysis and representation of loops
+@en * Machine Desc::    How to write machine description instruction patterns.
+@en * Target Macros::   How to write the machine description C macros and functions.
+@en * Host Config::     Writing the @file{xm-@var{machine}.h} file.
+@en * Fragments::       Writing the @file{t-@var{target}} and @file{x-@var{host}} files.
+@en * Collect2::        How @code{collect2} works; how it finds @code{ld}.
+@en * Header Dirs::     Understanding the standard header file directories.
+@en * Type Information:: GCC's memory management; generating type information.
+@en * Plugins::         Extending the compiler with plugins.
+@en * LTO::             Using Link-Time Optimization.
+@en 
+@en * Funding::         How to help assure funding for free software.
+@en * GNU Project::     The GNU Project and GNU/Linux.
+@en 
+@en * Copying::         GNU General Public License says
+@en                     how you can copy and share GCC.
+@en * GNU Free Documentation License:: How you can copy and share this manual.
+@en * Contributors::    People who have contributed to GCC.
+@en 
+@en * Option Index::    Index to command line options.
+@en * Concept Index::   Index of concepts and symbol names.
+@en @end menu
+@menu
+* Contributing::	如何帮助测试和开发GCC。
+* Portability::		GCC的可移植性。
+* Interface::		GCC输出的函数调用接口。
+* Libgcc::		GCC使用的低级运行时库。
+* Languages::		GCC前端支持的语言。
+* Source Tree::		GCC源目录结构和构建系统。
+* Testsuites::		GCC测试包。
+* Options::		选项描述文件。
+* Passes::		pass的顺序，它们做了什么，以及相关的源文件。
+* GENERIC::		前端生成的语言无关的表示。
+* GIMPLE::		Tree SSA优化器使用的元组表示。
+* Tree SSA::		分析和优化GIMPLE
+* RTL::			大多pass赖以工作的中间表示。
+* Control Flow::	维护和操作控制流图。
+* Loop Analysis and Representation::  对循环的分析和表示。
+* Machine Desc::	如何写机器描述指令模板。
+* Target Macros::	如何写机器描述C宏和函数。
+* Host Config::		编写 @file{xm-@var{machine}.h} 文件。
+* Fragments::		编写 @file{t-@var{target}} 和 @file{x-@var{host}} 文件。
+* Collect2::		@code{collect2} 是如何工作的; 如何找到 @code{ld}。
+* Header Dirs::		理解标准头文件目录。
+* Type Information::	GCC的内存管理；生成类型信息。
+* Plugins::		使用插件来扩展编译器。
+* LTO::			使用链接时优化。
+* Funding::		如何向自由软件提供资金帮助。
+* GNU Project::		GNU项目和GNU/Linux。
+* Copying::		GNU通用公共授权告诉你如何能够复制和分享GCC。
+* GNU Free Documentation License:: 如何能够复制和分享该手册。
+* Contributors::	向GCC作出过贡献的人。
+* Translation Contributors::	为翻译GCC Internals作出过贡献的人。
+* Option Index::	命令行选项索引。
+* Concept Index::	概念和符号名索引。
+@end menu
+
+@include contribute.texi
+@include portability.texi
+@include interface.texi
+@include libgcc.texi
+@include languages.texi
+@include sourcebuild.texi
+@include options.texi
+@include passes.texi
+@include rtl.texi
+@include generic.texi
+@include gimple.texi
+@include tree-ssa.texi
+@include loop.texi
+@include cfg.texi
+@include md.texi
+@include tm.texi
+@include hostconfig.texi
+@include fragments.texi
+@include collect2.texi
+@include headerdirs.texi
+@include gty.texi
+@include plugins.texi
+@include lto.texi
+
+@include funding.texi
+@include gnu.texi
+@include gpl_v3.texi
+
+@c ---------------------------------------------------------------------
+@c GFDL
+@c ---------------------------------------------------------------------
+
+@include fdl.texi
+
+@include contrib.texi
+
+@c Include translation contributors.
+@include contrib-zh.texi
+
+@c ---------------------------------------------------------------------
+@c Indexes
+@c ---------------------------------------------------------------------
+
+@en @node Option Index
+@en @unnumbered Option Index
+@node Option Index
+@unnumbered 选项索引
+
+GCC's command line options are indexed here without any initial @samp{-}
+or @samp{--}.  Where an option has both positive and negative forms
+(such as @option{-f@var{option}} and @option{-fno-@var{option}}),
+relevant entries in the manual are indexed under the most appropriate
+form; it may sometimes be useful to look up both forms.
+
+@printindex op
+
+@en @node Concept Index
+@en @unnumbered Concept Index
+@node Concept Index
+@unnumbered 概念索引
+
+@printindex cp
+
+@c ---------------------------------------------------------------------
+@c Epilogue
+@c ---------------------------------------------------------------------
+
+@bye

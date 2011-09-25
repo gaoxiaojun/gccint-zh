@@ -1,0 +1,4025 @@
+@c Copyright (c) 2004, 2005, 2007, 2008, 2010 Free Software Foundation, Inc.
+@c Free Software Foundation, Inc.
+@c This is part of the GCC manual.
+@c For copying conditions, see the file gcc.texi.
+
+@c ---------------------------------------------------------------------
+@c GENERIC
+@c ---------------------------------------------------------------------
+
+@node GENERIC
+@chapter GENERIC
+@cindex GENERIC
+
+@en The purpose of GENERIC is simply to provide a
+@en language-independent way of representing an entire function in
+@en trees.  To this end, it was necessary to add a few new tree codes
+@en to the back end, but most everything was already there.  If you
+@en can express it with the codes in @code{gcc/tree.def}, it's
+@en GENERIC@.
+GENERIC的目的是简单的提供一个使用tree来表示整个函数的语言无关的方式。为此，之前需要为后端增加一些新的tree代码，但是大多数东西都已经存在。如果你可以使用@code{gcc/tree.def}中的代码来表示，则其即为GENERIC。
+
+@en Early on, there was a great deal of debate about how to think
+@en about statements in a tree IL@.  In GENERIC, a statement is
+@en defined as any expression whose value, if any, is ignored.  A
+@en statement will always have @code{TREE_SIDE_EFFECTS} set (or it
+@en will be discarded), but a non-statement expression may also have
+@en side effects.  A @code{CALL_EXPR}, for instance.
+早期，有一个很大的争论，关于如何在tree IL级别来考虑语句。在GENERIC中，一条语句被定义为任意的表达式，其值，如果存在，被忽略。语句总是设置@code{TREE_SIDE_EFFECTS}，不过一个非语句的表达式也可以具有副作用。例如，@code{CALL_EXPR}。
+
+@en It would be possible for some local optimizations to work on the
+@en GENERIC form of a function; indeed, the adapted tree inliner
+@en works fine on GENERIC, but the current compiler performs inlining
+@en after lowering to GIMPLE (a restricted form described in the next
+@en section). Indeed, currently the frontends perform this lowering
+@en before handing off to @code{tree_rest_of_compilation}, but this
+@en seems inelegant.
+对于一些局部优化，可以在函数的GENERIC形式上进行工作；的确，被改写的tree内联在GENERIC上可以很好的工作，不过目前编译器是在下降到GIMPLE（一个严格的形式，在下节有描述）之后，才执行内联的。确实，目前前端是在移交给@code{tree_rest_of_compilation}之前，来执行该下降，不过这看起来不太优雅。
+
+@en @menu
+@en * Deficiencies::                Topics net yet covered in this document.
+@en * Tree overview::               All about @code{tree}s.
+@en * Types::                       Fundamental and aggregate types.
+@en * Declarations::                Type declarations and variables.
+@en * Attributes::                  Declaration and type attributes.
+@en * Expressions: Expression trees.            Operating on data.
+@en * Statements::                  Control flow and related trees.
+@en * Functions::           	Function bodies, linkage, and other aspects.
+@en * Language-dependent trees::    Topics and trees specific to language front ends.
+@en * C and C++ Trees::     	Trees specific to C and C++.
+@en * Java Trees:: 	                Trees specific to Java.
+@en @end menu
+
+@menu
+* Deficiencies::                在该文档中没有涵盖的专题
+* Tree overview::               所有关于@code{tree}的
+* Types::                       基本类型和聚合类型
+* Declarations::                类型声明和变量
+* Attributes::                  声明和类型属性
+* Expressions: Expression trees.            数据操作
+* Statements::                  控制流和相关的tree。
+* Functions::           	函数体，链接，以及其它方面
+* Language-dependent trees::    语言前端特定的话题和tree
+* C and C++ Trees::     	C和C++特定的tree
+* Java Trees:: 	                Java特定的tree
+@end menu
+
+@c ---------------------------------------------------------------------
+@c Deficiencies
+@c ---------------------------------------------------------------------
+
+@en @node Deficiencies
+@en @section Deficiencies
+@node Deficiencies
+@section 不足之处
+
+@en There are many places in which this document is incomplet and incorrekt.
+@en It is, as of yet, only @emph{preliminary} documentation.
+这部分文档有许多地方还不完整，并可能会有错误。这只是一个初步的文档。
+
+@c ---------------------------------------------------------------------
+@c Overview
+@c ---------------------------------------------------------------------
+
+@en @node Tree overview
+@en @section Overview
+@node Tree overview
+@section 概述
+@cindex tree
+@findex TREE_CODE
+
+@en The central data structure used by the internal representation is the
+@en @code{tree}.  These nodes, while all of the C type @code{tree}, are of
+@en many varieties.  A @code{tree} is a pointer type, but the object to
+@en which it points may be of a variety of types.  From this point forward,
+@en we will refer to trees in ordinary type, rather than in @code{this
+@en font}, except when talking about the actual C type @code{tree}.
+内部表示所使用的最重要的数据结构是@code{tree}。这些节点，虽然都为C类型@code{tree}，但具有许多变种。一个@code{tree}为一个指针类型，但是其指向的对象可以具有不同的类型。从现在开始，我们将用tree来表示普通类型，而当讨论实际的C类型@code{tree}时，则用@code{这样的字体}。
+
+@en You can tell what kind of node a particular tree is by using the
+@en @code{TREE_CODE} macro.  Many, many macros take trees as input and
+@en return trees as output.  However, most macros require a certain kind of
+@en tree node as input.  In other words, there is a type-system for trees,
+@en but it is not reflected in the C type-system.
+可以使用@code{TREE_CODE}宏来判别一个特定的tree的类型。有许许多多的宏，将tree作为输入，并返回tree作为输出。然而，大多数宏需要特定种类的tree节点作为输入。换句话说，tree是有一个类型系统的，但只不过是没有在C的类型系统中反映出来。
+
+@en For safety, it is useful to configure GCC with @option{--enable-checking}.
+@en Although this results in a significant performance penalty (since all
+@en tree types are checked at run-time), and is therefore inappropriate in a
+@en release version, it is extremely helpful during the development process.
+为了安全起见，可以使用@option{--enable-checking}来配置GCC。虽然这会对性能造成明显的影响（因为所有的tree类型都会在运行时被检查），并且因此不适合用于发行版，但这在开发阶段非常有帮助。
+
+@en Many macros behave as predicates.  Many, although not all, of these
+@en predicates end in @samp{_P}.  Do not rely on the result type of these
+@en macros being of any particular type.  You may, however, rely on the fact
+@en that the type can be compared to @code{0}, so that statements like
+许多宏是作为断言（predicates）来使用的。许多这些断言，虽然不是所有的，会以@samp{_P}为结尾。不要认为这些宏的结果类型就是一个特定的类型。不过，你可以将该类型和@code{0}进行比较。所以，像语句
+@smallexample
+if (TEST_P (t) && !TEST_P (y))
+  x = 1;
+@end smallexample
+@noindent
+@en and
+和
+@smallexample
+int i = (TEST_P (t) != 0);
+@end smallexample
+@noindent
+@en are legal.  Macros that return @code{int} values now may be changed to
+@en return @code{tree} values, or other pointers in the future.  Even those
+@en that continue to return @code{int} may return multiple nonzero codes
+@en where previously they returned only zero and one.  Therefore, you should
+@en not write code like
+都是合法的。现在返回@code{int}值的宏在将来也许会被改为返回@code{tree}值，或者其它指针。甚至那些继续返回@code{int}的，之前它们只返回0或者1，但将来也可能会返回多种非零码。因此，不要将代码写成
+@smallexample
+if (TEST_P (t) == 1)
+@end smallexample
+@noindent
+@en as this code is not guaranteed to work correctly in the future.
+因为，该代码在将来不保证可以正确工作。
+
+@en You should not take the address of values returned by the macros or
+@en functions described here.  In particular, no guarantee is given that the
+@en values are lvalues.
+不要使用这里描述的宏或者函数所返回的值的地址。特别的，不保证值为左值。
+
+@en In general, the names of macros are all in uppercase, while the names of
+@en functions are entirely in lowercase.  There are rare exceptions to this
+@en rule.  You should assume that any macro or function whose name is made
+@en up entirely of uppercase letters may evaluate its arguments more than
+@en once.  You may assume that a macro or function whose name is made up
+@en entirely of lowercase letters will evaluate its arguments only once.
+通常，宏的名字都为大写，而函数的名字全是小写。很少有例外的情况。你需要假定，任何名字完全为大写字母的宏或者函数，其可能会对它的参数进行多次求值。你可以假定，名字完全为小写字母的宏或者函数，其对它的参数只进行一次求值。
+
+@en The @code{error_mark_node} is a special tree.  Its tree code is
+@en @code{ERROR_MARK}, but since there is only ever one node with that code,
+@en the usual practice is to compare the tree against
+@en @code{error_mark_node}.  (This test is just a test for pointer
+@en equality.)  If an error has occurred during front-end processing the
+@en flag @code{errorcount} will be set.  If the front end has encountered
+@en code it cannot handle, it will issue a message to the user and set
+@en @code{sorrycount}.  When these flags are set, any macro or function
+@en which normally returns a tree of a particular kind may instead return
+@en the @code{error_mark_node}.  Thus, if you intend to do any processing of
+@en erroneous code, you must be prepared to deal with the
+@en @code{error_mark_node}.
+@code{error_mark_node}是一个特殊的树。它的树代码为@code{ERROR_MARK}，但由于只有一个节点具有那个代码，所以通常的做法是将树与@code{error_mark_node}进行比较。（该测试只是一个指针相等的测试。）如果在前端处理中，有一个错误发生，则标识@code{errorcount}将会被设置。如果前端遇到无法处理的代码，则会给用户发送一个消息，并设置@code{sorrycount}。当这些标识被设置时，则通常返回特定类型树的宏和函数，可能会替代的返回@code{error_mark_node}。因此，如果你打算进行任何错误代码处理，则必须准备好跟@code{error_mark_node}打交道。
+
+@en Occasionally, a particular tree slot (like an operand to an expression,
+@en or a particular field in a declaration) will be referred to as
+@en ``reserved for the back end''.  These slots are used to store RTL when
+@en the tree is converted to RTL for use by the GCC back end.  However, if
+@en that process is not taking place (e.g., if the front end is being hooked
+@en up to an intelligent editor), then those slots may be used by the
+@en back end presently in use.
+有时，一个特定的树插槽slot（就像表达式的操作数，或声明里的特定域）将被称为“为后端保留”。这些插槽用于存储RTL，当树被转换为RTL，被GCC后端使用时。然而，如果没有进行那种处理（例如，如果前端被钩子转向给一个智能编辑器），那么这些插槽就可以被使用了。
+
+@en If you encounter situations that do not match this documentation, such
+@en as tree nodes of types not mentioned here, or macros documented to
+@en return entities of a particular kind that instead return entities of
+@en some different kind, you have found a bug, either in the front end or in
+@en the documentation.  Please report these bugs as you would any other
+@en bug.
+如果你遇到的情况不符合这个文档，如没有在这里提到的树节点的类型，或记载的宏返回了不同的某一类型实体，那么你发现了一个bug ，要么是前端的，要么是该文档的。请报告这些bug，以及是否有任何其他的bug。
+
+@en @menu
+@en * Macros and Functions::Macros and functions that can be used with all trees.
+@en * Identifiers::         The names of things.
+@en * Containers::          Lists and vectors.
+@en @end menu
+@menu
+* Macros and Functions::可以用于所有tree的宏和函数。
+* Identifiers::         事物的名字。
+* Containers::          列表和向量。
+@end menu
+
+@c ---------------------------------------------------------------------
+@c Trees
+@c ---------------------------------------------------------------------
+
+@node Macros and Functions
+@subsection Trees
+@cindex tree
+@findex TREE_CHAIN
+@findex TREE_TYPE
+
+All GENERIC trees have two fields in common.  First, @code{TREE_CHAIN}
+is a pointer that can be used as a singly-linked list to other trees.
+The other is @code{TREE_TYPE}.  Many trees store the type of an
+expression or declaration in this field.
+
+These are some other functions for handling trees:
+
+@ftable @code
+
+@item tree_size
+Return the number of bytes a tree takes.
+
+@item build0
+@itemx build1
+@itemx build2
+@itemx build3
+@itemx build4
+@itemx build5
+@itemx build6
+
+These functions build a tree and supply values to put in each
+parameter.  The basic signature is @samp{@w{code, type, [operands]}}.
+@code{code} is the @code{TREE_CODE}, and @code{type} is a tree
+representing the @code{TREE_TYPE}.  These are followed by the
+operands, each of which is also a tree.
+
+@end ftable
+
+
+@c ---------------------------------------------------------------------
+@c Identifiers
+@c ---------------------------------------------------------------------
+
+@en @node Identifiers
+@en @subsection Identifiers
+@node Identifiers
+@subsection 标识符
+@cindex identifier
+@cindex name
+@tindex IDENTIFIER_NODE
+
+@en An @code{IDENTIFIER_NODE} represents a slightly more general concept
+@en that the standard C or C++ concept of identifier.  In particular, an
+@en @code{IDENTIFIER_NODE} may contain a @samp{$}, or other extraordinary
+@en characters.
+@code{IDENTIFIER_NODE}表示了比标准C或C++关于标识符更略为一般的概念。特别是，@code{IDENTIFIER_NODE}可以包含一个@samp{$}，或其它额外的字符。
+
+@en There are never two distinct @code{IDENTIFIER_NODE}s representing the
+@en same identifier.  Therefore, you may use pointer equality to compare
+@en @code{IDENTIFIER_NODE}s, rather than using a routine like
+@en @code{strcmp}.  Use @code{get_identifier} to obtain the unique
+@en @code{IDENTIFIER_NODE} for a supplied string.
+不会有两个不同的@code{IDENTIFIER_NODE}表示同一个标识符。因此，你可以使用指针相等的方式来比较@code{IDENTIFIER_NODE}，而不必使用像strcmp这样的函数。
+
+@en You can use the following macros to access identifiers:
+可以使用下列宏来访问标识符：
+@ftable @code
+@item IDENTIFIER_POINTER
+@en The string represented by the identifier, represented as a
+@en @code{char*}.  This string is always @code{NUL}-terminated, and contains
+@en no embedded @code{NUL} characters.
+标识符所表示的字符串，为一个@code{char*}。该字符串总是以@code{NUL}结束，并且不包含嵌入的@code{NUL}字符。
+
+@item IDENTIFIER_LENGTH
+@en The length of the string returned by @code{IDENTIFIER_POINTER}, not
+@en including the trailing @code{NUL}.  This value of
+@en @code{IDENTIFIER_LENGTH (x)} is always the same as @code{strlen
+@en (IDENTIFIER_POINTER (x))}.
+由@code{IDENTIFIER_POINTER}返回的字符串的长度，不包括结尾的@code{NUL}。@code{IDENTIFIER_LENGTH (x)}的值总是与@code{strlen (IDENTIFIER_POINTER (x))}相同。
+
+@item IDENTIFIER_OPNAME_P
+@en This predicate holds if the identifier represents the name of an
+@en overloaded operator.  In this case, you should not depend on the
+@en contents of either the @code{IDENTIFIER_POINTER} or the
+@en @code{IDENTIFIER_LENGTH}.
+该断言当标识符表示的是重载操作符的名字时有效。这种情况下，不要依赖@code{IDENTIFIER_POINTER}或@code{IDENTIFIER_LENGTH}的内容。
+
+@item IDENTIFIER_TYPENAME_P
+@en This predicate holds if the identifier represents the name of a
+@en user-defined conversion operator.  In this case, the @code{TREE_TYPE} of
+@en the @code{IDENTIFIER_NODE} holds the type to which the conversion
+@en operator converts.
+该断言当标识符表示的是用户定义的转换操作符的名字时有效。这种情况下，@code{IDENTIFIER_NODE}的@code{TREE_TYPE}持有转换操作符转换后的类型。
+
+@end ftable
+
+@c ---------------------------------------------------------------------
+@c Containers
+@c ---------------------------------------------------------------------
+
+@en @node Containers
+@en @subsection Containers
+@node Containers
+@subsection 容器
+@cindex container
+@cindex list
+@cindex vector
+@tindex TREE_LIST
+@tindex TREE_VEC
+@findex TREE_PURPOSE
+@findex TREE_VALUE
+@findex TREE_VEC_LENGTH
+@findex TREE_VEC_ELT
+
+@en Two common container data structures can be represented directly with
+@en tree nodes.  A @code{TREE_LIST} is a singly linked list containing two
+@en trees per node.  These are the @code{TREE_PURPOSE} and @code{TREE_VALUE}
+@en of each node.  (Often, the @code{TREE_PURPOSE} contains some kind of
+@en tag, or additional information, while the @code{TREE_VALUE} contains the
+@en majority of the payload.  In other cases, the @code{TREE_PURPOSE} is
+@en simply @code{NULL_TREE}, while in still others both the
+@en @code{TREE_PURPOSE} and @code{TREE_VALUE} are of equal stature.)  Given
+@en one @code{TREE_LIST} node, the next node is found by following the
+@en @code{TREE_CHAIN}.  If the @code{TREE_CHAIN} is @code{NULL_TREE}, then
+@en you have reached the end of the list.
+有两种通用容器数据结构可以直接用树节点表示。@code{TREE_LIST}是一个单向链表，每个节点包含两个树。每个节点都有@code{TREE_PURPOSE}和@code{TREE_VALUE}。（很多时候，@code{TREE_PURPOSE}包含了某种tag，或补充信息，而@code{TREE_VALUE}包含了大部分的有效载荷。在其他情况下，@code{TREE_PURPOSE}只是一个@code{NULL_TREE}，而还有一些情况，@code{TREE_PURPOSE}和@code{TREE_VALUE}是处于相等的状况。）给定一个@code{TREE_LIST}节点，可以沿着@code{TREE_CHAIN}来找到下一个节点。如果@code{TREE_CHAIN}为@code{NULL_TREE}时，则表示到达链表的结尾了。
+
+@en A @code{TREE_VEC} is a simple vector.  The @code{TREE_VEC_LENGTH} is an
+@en integer (not a tree) giving the number of nodes in the vector.  The
+@en nodes themselves are accessed using the @code{TREE_VEC_ELT} macro, which
+@en takes two arguments.  The first is the @code{TREE_VEC} in question; the
+@en second is an integer indicating which element in the vector is desired.
+@en The elements are indexed from zero.
+@code{TREE_VEC}是一个简单的向量。@code{TREE_VEC_LENGTH}是一个整数（不是树），给出了向量中节点的数目。节点本身通过宏@code{TREE_VEC_ELT}来访问，其接受两个参数。第一个为要查询的@code{TREE_VEC}；第二个为整数，指定了向量中的元素。元素索引从0开始。
+
+@c ---------------------------------------------------------------------
+@c Types
+@c ---------------------------------------------------------------------
+
+@en @node Types
+@en @section Types
+@node Types
+@section 类型
+@cindex type
+@cindex pointer
+@cindex reference
+@cindex fundamental type
+@cindex array
+@tindex VOID_TYPE
+@tindex INTEGER_TYPE
+@tindex TYPE_MIN_VALUE
+@tindex TYPE_MAX_VALUE
+@tindex REAL_TYPE
+@tindex FIXED_POINT_TYPE
+@tindex COMPLEX_TYPE
+@tindex ENUMERAL_TYPE
+@tindex BOOLEAN_TYPE
+@tindex POINTER_TYPE
+@tindex REFERENCE_TYPE
+@tindex FUNCTION_TYPE
+@tindex METHOD_TYPE
+@tindex ARRAY_TYPE
+@tindex RECORD_TYPE
+@tindex UNION_TYPE
+@tindex UNKNOWN_TYPE
+@tindex OFFSET_TYPE
+@findex TYPE_UNQUALIFIED
+@findex TYPE_QUAL_CONST
+@findex TYPE_QUAL_VOLATILE
+@findex TYPE_QUAL_RESTRICT
+@findex TYPE_MAIN_VARIANT
+@cindex qualified type
+@findex TYPE_SIZE
+@findex TYPE_ALIGN
+@findex TYPE_PRECISION
+@findex TYPE_ARG_TYPES
+@findex TYPE_METHOD_BASETYPE
+@findex TYPE_OFFSET_BASETYPE
+@findex TREE_TYPE
+@findex TYPE_CONTEXT
+@findex TYPE_NAME
+@findex TYPENAME_TYPE_FULLNAME
+@findex TYPE_FIELDS
+@findex TYPE_CANONICAL
+@findex TYPE_STRUCTURAL_EQUALITY_P
+@findex SET_TYPE_STRUCTURAL_EQUALITY
+
+@en All types have corresponding tree nodes.  However, you should not assume
+@en that there is exactly one tree node corresponding to each type.  There
+@en are often multiple nodes corresponding to the same type.
+所有的类型都有相应的树节点。但是不要假设一个树节点就是正好对应于一个类型。经常有多个节点对应于相同的类型。
+
+@en For the most part, different kinds of types have different tree codes.
+@en (For example, pointer types use a @code{POINTER_TYPE} code while arrays
+@en use an @code{ARRAY_TYPE} code.)  However, pointers to member functions
+@en use the @code{RECORD_TYPE} code.  Therefore, when writing a
+@en @code{switch} statement that depends on the code associated with a
+@en particular type, you should take care to handle pointers to member
+@en functions under the @code{RECORD_TYPE} case label.
+在大多数情况下，不同种类的类型具有不同的树代码。（例如，指针类型使用@code{POINTER_TYPE}代码，而数组使用@code{ARRAY_TYPE}代码。）但是，指向成员函数的指针使用@code{RECORD_TYPE}代码。因此，当写与特定类型相关联的@code{switch}语句时，应该在@code{RECORD_TYPE} case标签下小心处理指向成员函数的指针。
+
+@en The following functions and macros deal with cv-qualification of types:
+@ftable @code
+@item TYPE_MAIN_VARIANT
+@en This macro returns the unqualified version of a type.  It may be applied
+@en to an unqualified type, but it is not always the identity function in
+@en that case.
+该宏类型未限定的版本。可以用于一个未限定的类型，但这种情况下，并不总是标识符函数。
+@end ftable
+
+@en A few other macros and functions are usable with all types:
+一些其它的宏和函数可用于所有的类型：
+@ftable @code
+@item TYPE_SIZE
+@en The number of bits required to represent the type, represented as an
+@en @code{INTEGER_CST}.  For an incomplete type, @code{TYPE_SIZE} will be
+@en @code{NULL_TREE}.
+类型表示所需要的位数，为一个@code{INTEGER_CST}。
+对于不完全类型，@code{TYPE_SIZE}将为@code{NULL_TREE}。 
+
+@item TYPE_ALIGN
+@en The alignment of the type, in bits, represented as an @code{int}.
+类型的对齐位数，为一个@code{int}。
+
+@item TYPE_NAME
+@en This macro returns a declaration (in the form of a @code{TYPE_DECL}) for
+@en the type.  (Note this macro does @emph{not} return an
+@en @code{IDENTIFIER_NODE}, as you might expect, given its name!)  You can
+@en look at the @code{DECL_NAME} of the @code{TYPE_DECL} to obtain the
+@en actual name of the type.  The @code{TYPE_NAME} will be @code{NULL_TREE}
+@en for a type that is not a built-in type, the result of a typedef, or a
+@en named class type.
+该宏返回类型的一个声明（按照@code{TYPE_DECL}的型式）。（注意该宏不返回@code{IDENTIFIER_NODE}）你可以查看@code{TYPE_DECL}的@code{DECL_NAME}来获得类型的实际的名字。@code{TYPE_NAME}将为@code{NULL_TREE}，对于不是内建类型的，typedef的，或者命名的class类型。
+
+@item TYPE_CANONICAL
+@en This macro returns the ``canonical'' type for the given type
+@en node. Canonical types are used to improve performance in the C++ and
+@en Objective-C++ front ends by allowing efficient comparison between two
+@en type nodes in @code{same_type_p}: if the @code{TYPE_CANONICAL} values
+@en of the types are equal, the types are equivalent; otherwise, the types
+@en are not equivalent. The notion of equivalence for canonical types is
+@en the same as the notion of type equivalence in the language itself. For
+@en instance,
+该宏为给定的类型节点返回“正则”类型。正则类型用于C++和Objective-C的前端，使得在@code{same_type_p}中，可以对两个类型进行高效的比较，从而提高性能：如果类型的@code{TYPE_CANONICAL}值相等，则类型是等价的；否则，类型不相等。关于正则类型的相等的概念，与在语言中类型相等的概念是一样的。例如，
+
+@en When @code{TYPE_CANONICAL} is @code{NULL_TREE}, there is no canonical
+@en type for the given type node. In this case, comparison between this
+@en type and any other type requires the compiler to perform a deep,
+@en ``structural'' comparison to see if the two type nodes have the same
+@en form and properties.
+当@code{TYPE_CANONICAL}为@code{NULL_TREE}，则对于给定的类型节点，没有正则类型。这种情况下，比较该类型和任何其它类型，需要编译器执行深入的，“结构化的”比较，来看两个类型节点是否具有相同的形式和属性。
+
+@en The canonical type for a node is always the most fundamental type in
+@en the equivalence class of types. For instance, @code{int} is its own
+@en canonical type. A typedef @code{I} of @code{int} will have @code{int}
+@en as its canonical type. Similarly, @code{I*}@ and a typedef @code{IP}@
+@en (defined to @code{I*}) will has @code{int*} as their canonical
+@en type. When building a new type node, be sure to set
+@en @code{TYPE_CANONICAL} to the appropriate canonical type. If the new
+@en type is a compound type (built from other types), and any of those
+@en other types require structural equality, use
+@en @code{SET_TYPE_STRUCTURAL_EQUALITY} to ensure that the new type also
+@en requires structural equality. Finally, if for some reason you cannot
+@en guarantee that @code{TYPE_CANONICAL} will point to the canonical type,
+@en use @code{SET_TYPE_STRUCTURAL_EQUALITY} to make sure that the new
+@en type--and any type constructed based on it--requires structural
+@en equality. If you suspect that the canonical type system is
+@en miscomparing types, pass @code{--param verify-canonical-types=1} to
+@en the compiler or configure with @code{--enable-checking} to force the
+@en compiler to verify its canonical-type comparisons against the
+@en structural comparisons; the compiler will then print any warnings if
+@en the canonical types miscompare.
+节点的正则类型，在等价的类型类别中，总是最根本的类型。例如，@code{int}为其自己的正则类型。@code{int}的自定义类型@code{I}，将@code{int}作为它的正则类型。类似的，@code{I*}和自定义类型@code{IP}（定义为@code{I*}），将@code{int*}作为它们的正则类型。当构建一个新的类型节点时，要记着将@code{TYPE_CANONICAL}设置为合适的正则类型。如果新类型为一个复合类型（从其它类型中构建的），并且那些类型中的任意一个需要进行结构化相等，则使用@code{SET_TYPE_STRUCTURAL_EQUALITY}来确保新的类型也需要结构化相等。最后，如果出于某种原因，你不能确保@code{TYPE_CANONICAL}能指向正则类型，则使用@code{SET_TYPE_STRUCTURAL_EQUALITY}来确保新的类型，任何基于它构建的类型，则需要结构化相等。如果你怀疑正则类型系统进行了错误的类型比较，则将@code{--param verify-canonical-types=1}传给编译器，或者使用@code{--enable-checking}来configure，强制编译器基于结构化比较来验证它的正则类型比较；如果正则类型比较有出入，则编译器将打印出警告信息。
+
+@item TYPE_STRUCTURAL_EQUALITY_P
+@en This predicate holds when the node requires structural equality
+@en checks, e.g., when @code{TYPE_CANONICAL} is @code{NULL_TREE}.
+当节点需要进行结构相等检查的时候，该断言成立，例如，当@code{TYPE_CANONICAL}为@code{NULL_TREE}时。
+
+@item SET_TYPE_STRUCTURAL_EQUALITY
+@en This macro states that the type node it is given requires structural
+@en equality checks, e.g., it sets @code{TYPE_CANONICAL} to
+@en @code{NULL_TREE}.
+该宏规定给定的类型节点需要进行结构相等检查，例如，其将@code{TYPE_CANONICAL}设为@code{NULL_TREE}。
+
+@item same_type_p
+@en This predicate takes two types as input, and holds if they are the same
+@en type.  For example, if one type is a @code{typedef} for the other, or
+@en both are @code{typedef}s for the same type.  This predicate also holds if
+@en the two trees given as input are simply copies of one another; i.e.,
+@en there is no difference between them at the source level, but, for
+@en whatever reason, a duplicate has been made in the representation.  You
+@en should never use @code{==} (pointer equality) to compare types; always
+@en use @code{same_type_p} instead.
+该断言接受两个类型作为输入，如果它们为相同的类型，则判断成立。例如，如果一个类型为另一个类型的@code{typedef}，或者这两个都为同一个类型的@code{typedef}。如果作为输入给定的两个tree，只是简单的为另一个的复制，则该断言也成立；即，它们在源代码级别没有差别，但是，出于某种原因，在表示的时候进行了复制。不要用@code{==}（pointer equality）来比较类型；要用@code{same_type_p}。
+@end ftable
+
+@en Detailed below are the various kinds of types, and the macros that can
+@en be used to access them.  Although other kinds of types are used
+@en elsewhere in G++, the types described here are the only ones that you
+@en will encounter while examining the intermediate representation.
+下面详细介绍了各种类型，以及可以用来访问它们的宏。虽然有其它类型是在G++中用到，这里描述的类型将只是当你检查中间表示时会遇到的。
+
+@table @code
+@item VOID_TYPE
+@en Used to represent the @code{void} type.
+用于表示@code{void}类型。
+
+@item INTEGER_TYPE
+@en Used to represent the various integral types, including @code{char},
+@en @code{short}, @code{int}, @code{long}, and @code{long long}.  This code
+@en is not used for enumeration types, nor for the @code{bool} type.
+@en The @code{TYPE_PRECISION} is the number of bits used in
+@en the representation, represented as an @code{unsigned int}.  (Note that
+@en in the general case this is not the same value as @code{TYPE_SIZE};
+@en suppose that there were a 24-bit integer type, but that alignment
+@en requirements for the ABI required 32-bit alignment.  Then,
+@en @code{TYPE_SIZE} would be an @code{INTEGER_CST} for 32, while
+@en @code{TYPE_PRECISION} would be 24.)  The integer type is unsigned if
+@en @code{TYPE_UNSIGNED} holds; otherwise, it is signed.
+用来表示跟中整数类型，包括@code{char}，@code{short}，@code{int}，@code{long}和@code{long long}。该代码不用于枚举类型和@code{bool}类型。@code{TYPE_PRECISION}为用于表示该类型的位数，是一个@code{unsigned int}。（注意，通常情况它的值与@code{TYPE_SIZE}不相同；假设有一个24位的整数类型，但是ABI要求32位的对齐方式。则，@code{TYPE_SIZE}将为一个@code{INTEGER_CST}，32，而@code{TYPE_PRECISION}为24。）如果@code{TYPE_UNSIGNED}成立，则整数类型为无符号的；否则为有符号的。
+
+@en The @code{TYPE_MIN_VALUE} is an @code{INTEGER_CST} for the smallest
+@en integer that may be represented by this type.  Similarly, the
+@en @code{TYPE_MAX_VALUE} is an @code{INTEGER_CST} for the largest integer
+@en that may be represented by this type.
+@code{TYPE_MIN_VALUE}为一个@code{INTEGER_CST}，是该类型可以表示的最小整数。类似的，@code{TYPE_MAX_VALUE}为一个@code{INTEGER_CST}，是该类型可以表示的最大整数。
+
+@item REAL_TYPE
+@en Used to represent the @code{float}, @code{double}, and @code{long
+@en double} types.  The number of bits in the floating-point representation
+@en is given by @code{TYPE_PRECISION}, as in the @code{INTEGER_TYPE} case.
+用来表示类型@code{float}，@code{double}和@code{long double}。跟@code{INTEGER_TYPE}的情况类型，用于浮点表示的位数由@code{TYPE_PRECISION}给出。
+
+@item FIXED_POINT_TYPE
+@en Used to represent the @code{short _Fract}, @code{_Fract}, @code{long
+@en _Fract}, @code{long long _Fract}, @code{short _Accum}, @code{_Accum},
+@en @code{long _Accum}, and @code{long long _Accum} types.  The number of bits
+@en in the fixed-point representation is given by @code{TYPE_PRECISION},
+@en as in the @code{INTEGER_TYPE} case.  There may be padding bits, fractional
+@en bits and integral bits.  The number of fractional bits is given by
+@en @code{TYPE_FBIT}, and the number of integral bits is given by @code{TYPE_IBIT}.
+@en The fixed-point type is unsigned if @code{TYPE_UNSIGNED} holds; otherwise,
+@en it is signed.
+@en The fixed-point type is saturating if @code{TYPE_SATURATING} holds; otherwise,
+@en it is not saturating.
+用来表示类型@code{short _Fract}, @code{_Fract}, @code{long _Fract}, @code{long long _Fract}, @code{short _Accum}, @code{_Accum}, @code{long _Accum}, 和 @code{long long _Accum}。跟@code{INTEGER_TYPE}的情况类型，用于定点表示的位数由@code{TYPE_PRECISION}给出。可能会有填充位，小数位和整数位。小数的位数由@code{TYPE_FBIT}给出，整数的位数由@code{TYPE_IBIT}给出。如果@code{TYPE_UNSIGNED}成立，则定点类型为无符号的；否则为有符号的。如果@code{TYPE_SATURATING}成立，则定点类型为饱和的；否则不是饱和的。
+
+@item COMPLEX_TYPE
+@en Used to represent GCC built-in @code{__complex__} data types.  The
+@en @code{TREE_TYPE} is the type of the real and imaginary parts.
+用来表示GCC内建的@code{__complex__}数据类型。@code{TREE_TYPE}为实部和虚部的类型。
+
+@item ENUMERAL_TYPE
+@en Used to represent an enumeration type.  The @code{TYPE_PRECISION} gives
+@en (as an @code{int}), the number of bits used to represent the type.  If
+@en there are no negative enumeration constants, @code{TYPE_UNSIGNED} will
+@en hold.  The minimum and maximum enumeration constants may be obtained
+@en with @code{TYPE_MIN_VALUE} and @code{TYPE_MAX_VALUE}, respectively; each
+@en of these macros returns an @code{INTEGER_CST}.
+用于表示枚举类型。@code{TYPE_PRECISION}给出了用于表示该类型的位数（为一个@code{int}）。如果没有负数的枚举常量，则@code{TYPE_UNSIGNED}成立。最小和最大的枚举常量，可以分别使用@code{TYPE_MIN_VALUE}和@code{TYPE_MAX_VALUE}获得；每个宏都返回一个@code{INTEGER_CST}。
+
+@en The actual enumeration constants themselves may be obtained by looking
+@en at the @code{TYPE_VALUES}.  This macro will return a @code{TREE_LIST},
+@en containing the constants.  The @code{TREE_PURPOSE} of each node will be
+@en an @code{IDENTIFIER_NODE} giving the name of the constant; the
+@en @code{TREE_VALUE} will be an @code{INTEGER_CST} giving the value
+@en assigned to that constant.  These constants will appear in the order in
+@en which they were declared.  The @code{TREE_TYPE} of each of these
+@en constants will be the type of enumeration type itself.
+实际的枚举常量可以通过查看@code{TYPE_VALUES}来获得。该宏将返回一个@code{TREE_LIST}，包含了常量；@code{TREE_VALUE}将为一个@code{INTEGER_CST}，给出了赋予那个常量的值。这些常量将按照它们被声明的顺序出现。每个常量的@code{TREE_TYPE}，将为枚举类型本身的类型。
+
+@item BOOLEAN_TYPE
+@en Used to represent the @code{bool} type.
+用来表示@code{bool}类型。
+
+@item POINTER_TYPE
+@en Used to represent pointer types, and pointer to data member types.  The
+@en @code{TREE_TYPE} gives the type to which this type points.
+用来表示指针类型，以及指向数据成员的指针类型。@code{TREE_TYPE}给出了所指向的类型。如果类型为一个指向数据成员的指针，则@code{TYPE_PTRMEM_P}成立。对于一个指向@samp{T X::*}形式的数据成员类型的指针，@code{TYPE_PTRMEM_CLASS_TYPE}将为类型@code{X}，而@code{TYPE_PTRMEM_POINTED_TO_TYPE}为类型@code{T}。
+
+@item REFERENCE_TYPE
+@en Used to represent reference types.  The @code{TREE_TYPE} gives the type
+@en to which this type refers.
+用来表示引用类型。@code{TREE_TYPE}给出了所引用的类型。
+
+@item FUNCTION_TYPE
+@en Used to represent the type of non-member functions and of static member
+@en functions.  The @code{TREE_TYPE} gives the return type of the function.
+@en The @code{TYPE_ARG_TYPES} are a @code{TREE_LIST} of the argument types.
+@en The @code{TREE_VALUE} of each node in this list is the type of the
+@en corresponding argument; the @code{TREE_PURPOSE} is an expression for the
+@en default argument value, if any.  If the last node in the list is
+@en @code{void_list_node} (a @code{TREE_LIST} node whose @code{TREE_VALUE}
+@en is the @code{void_type_node}), then functions of this type do not take
+@en variable arguments.  Otherwise, they do take a variable number of
+@en arguments.
+用来表示非成员函数和静态成员函数的类型。@code{TREE_TYPE}给出了函数的返回值类型。@code{TYPE_ARG_TYPES}为一个@code{TREE_LIST}，参数类型列表。该列表上的每个节点的@code{TREE_VALUE}为相应参数的类型；@code{TREE_PURPOSE}如果存在，则为缺省参数值的表达式。如果列表中的最后一个节点为@code{void_list_node}（一个@code{TREE_LIST}节点，其@code{TREE_VALUE}为@code{void_type_node}），则该类型的函数不接受可变参数。否则，它们是接受可变数目的参数。
+
+@en Note that in C (but not in C++) a function declared like @code{void f()}
+@en is an unprototyped function taking a variable number of arguments; the
+@en @code{TYPE_ARG_TYPES} of such a function will be @code{NULL}.
+注意，在C（而不是C++）中，一个声明如@code{void f()}的函数，为一个无函数原型的函数，其接受可变数目的参数；这样的函数的@code{TYPE_ARG_TYPES}将为@code{NULL}。
+
+@item METHOD_TYPE
+@en Used to represent the type of a non-static member function.  Like a
+@en @code{FUNCTION_TYPE}, the return type is given by the @code{TREE_TYPE}.
+@en The type of @code{*this}, i.e., the class of which functions of this
+@en type are a member, is given by the @code{TYPE_METHOD_BASETYPE}.  The
+@en @code{TYPE_ARG_TYPES} is the parameter list, as for a
+@en @code{FUNCTION_TYPE}, and includes the @code{this} argument.
+用来表示非静态成员函数的类型。像@code{FUNCTION_TYPE}一样，返回值由@code{TREE_TYPE}给出。@code{*this}的类型，即，这个函数成员所在的类的类型，由@code{TYPE_METHOD_BASETYPE}给出。@code{TYPE_ARG_TYPES}为参数列表，就像@code{FUNCTION_TYPE}一样，包含@code{this}参数。
+
+@item ARRAY_TYPE
+@en Used to represent array types.  The @code{TREE_TYPE} gives the type of
+@en the elements in the array.  If the array-bound is present in the type,
+@en the @code{TYPE_DOMAIN} is an @code{INTEGER_TYPE} whose
+@en @code{TYPE_MIN_VALUE} and @code{TYPE_MAX_VALUE} will be the lower and
+@en upper bounds of the array, respectively.  The @code{TYPE_MIN_VALUE} will
+@en always be an @code{INTEGER_CST} for zero, while the
+@en @code{TYPE_MAX_VALUE} will be one less than the number of elements in
+@en the array, i.e., the highest value which may be used to index an element
+@en in the array.
+用于表示数组类型，@code{TREE_TYPE}给出了数组元素的类型。如果数组边界在类型中存在，则@code{TYPE_DOMAIN}为一个@code{INTEGER_TYPE}，它的@code{TYPE_MIN_VALUE}和@code{TYPE_MAX_VALUE}将分别为数组的下界和上界。@code{TYPE_MIN_VALUE}将总是为@code{INTEGER_CST}，0，而@code{TYPE_MAX_VALUE}将为数组元素数目减1，即可以用来索引数组元素的最大值。
+
+@item RECORD_TYPE
+@en Used to represent @code{struct} and @code{class} types, as well as
+@en pointers to member functions and similar constructs in other languages.
+@en @code{TYPE_FIELDS} contains the items contained in this type, each of
+@en which can be a @code{FIELD_DECL}, @code{VAR_DECL}, @code{CONST_DECL}, or
+@en @code{TYPE_DECL}.  You may not make any assumptions about the ordering
+@en of the fields in the type or whether one or more of them overlap.
+用来表示@code{struct}和@code{class}类型，以及指向成员函数和其它语言中类似结构的指针。@code{TYPE_FIELDS}包含了该类型中包含的项，其可以为@code{FIELD_DECL}, @code{VAR_DECL}, @code{CONST_DECL}或@code{TYPE_DECL}。你不能假设类型中的域之间的顺序，以及它们是否有重叠。
+
+@item UNION_TYPE
+@en Used to represent @code{union} types.  Similar to @code{RECORD_TYPE}
+@en except that all @code{FIELD_DECL} nodes in @code{TYPE_FIELD} start at
+@en bit position zero.
+用来表示@code{union}类型。类似于@code{RECORD_TYPE}，只不过在@code{TYPE_FIELD}中的所有@code{FIELD_DECL}起始于0位。
+
+@item QUAL_UNION_TYPE
+@en Used to represent part of a variant record in Ada.  Similar to
+@en @code{UNION_TYPE} except that each @code{FIELD_DECL} has a
+@en @code{DECL_QUALIFIER} field, which contains a boolean expression that
+@en indicates whether the field is present in the object.  The type will only
+@en have one field, so each field's @code{DECL_QUALIFIER} is only evaluated
+@en if none of the expressions in the previous fields in @code{TYPE_FIELDS}
+@en are nonzero.  Normally these expressions will reference a field in the
+@en outer object using a @code{PLACEHOLDER_EXPR}.
+用来表示Ada中的可变记录（variant record）的一部分。类似于@code{UNION_TYPE}，只不过每个@code{FIELD_DECL}具有一个@code{DECL_QUALIFIER}域，其包含了一个布尔表达式，用来指示该域是否在对象中存在。该类型将只有一个域，所以只有当@code{TYPE_FIELDS}中，先前的域中的表达式都不为零时，每个域的@code{DECL_QUALIFIER}才被求值。通常，这些表达式将使用@code{PLACEHOLDER_EXPR}引用外部对象的一个域。
+
+@item LANG_TYPE
+@en This node is used to represent a language-specific type.  The front
+@en end must handle it.
+该节点用来表示一个语言特定的类型。前端必须对它进行处理。
+
+@item OFFSET_TYPE
+@en This node is used to represent a pointer-to-data member.  For a data
+@en member @code{X::m} the @code{TYPE_OFFSET_BASETYPE} is @code{X} and the
+@en @code{TREE_TYPE} is the type of @code{m}.
+该节点用于表示一个pointer-to-data成员。对于一个数据成员@code{X::m}，则@code{TYPE_OFFSET_BASETYPE}为@code{X}，@code{TREE_TYPE}为 @code{m}类型.
+
+@end table
+
+@en There are variables whose values represent some of the basic types.
+@en These include:
+有些变量，它们的值表示基本的类型。这包括：
+@table @code
+@item void_type_node
+@en A node for @code{void}.
+@code{void}节点。
+
+@item integer_type_node
+@en A node for @code{int}.
+@code{int}节点。
+
+@item unsigned_type_node.
+@en A node for @code{unsigned int}.
+@code{unsigned int}节点。
+
+@item char_type_node.
+@en A node for @code{char}.
+@code{char}节点。
+@end table
+@noindent
+@en It may sometimes be useful to compare one of these variables with a type
+@en in hand, using @code{same_type_p}.
+有时使用@code{same_type_p}将这些变量和手头的类型进行比较会很有帮助。 
+
+@c ---------------------------------------------------------------------
+@c Declarations
+@c ---------------------------------------------------------------------
+
+@en @node Declarations
+@en @section Declarations
+@node Declarations
+@section 声明
+@cindex declaration
+@cindex variable
+@cindex type declaration
+@tindex LABEL_DECL
+@tindex CONST_DECL
+@tindex TYPE_DECL
+@tindex VAR_DECL
+@tindex PARM_DECL
+@tindex DEBUG_EXPR_DECL
+@tindex FIELD_DECL
+@tindex NAMESPACE_DECL
+@tindex RESULT_DECL
+@tindex TEMPLATE_DECL
+@tindex THUNK_DECL
+@findex THUNK_DELTA
+@findex DECL_INITIAL
+@findex DECL_SIZE
+@findex DECL_ALIGN
+@findex DECL_EXTERNAL
+
+@en This section covers the various kinds of declarations that appear in the
+@en internal representation, except for declarations of functions
+@en (represented by @code{FUNCTION_DECL} nodes), which are described in
+@en @ref{Functions}.
+这一节涵盖了出现在内部表示中的各种声明。函数声明（由@code{FUNCTION_DECL}节点表示）除外，其在@ref{Functions}一节中描述。
+
+@en @menu
+@en * Working with declarations::  Macros and functions that work on
+@en declarations.
+@en * Internal structure:: How declaration nodes are represented. 
+@en @end menu
+@menu
+* Working with declarations:: 作用于声明的宏和函数
+* Internal structure:: 声明节点是如何表示的 
+@end menu
+
+@en @node Working with declarations
+@en @subsection Working with declarations
+@node Working with declarations
+@subsection 关于声明的操作
+
+@en Some macros can be used with any kind of declaration.  These include:
+一些宏可以用于任何种类的声明。这包括：
+@ftable @code
+@item DECL_NAME
+@en This macro returns an @code{IDENTIFIER_NODE} giving the name of the
+@en entity.
+该宏返回一个@code{IDENTIFIER_NODE}，给出了实体的名字。
+
+@item TREE_TYPE
+@en This macro returns the type of the entity declared.
+该宏返回被声明的实体的类型。
+
+@item EXPR_FILENAME
+@en This macro returns the name of the file in which the entity was
+@en declared, as a @code{char*}.  For an entity declared implicitly by the
+@en compiler (like @code{__builtin_memcpy}), this will be the string
+@en @code{"<internal>"}.
+该宏返回被声明的实体所在的文件的名字，作为一个@code{char*}。对于由编译器隐式声明的实体（比如@code{__builtin_memcpy}），这将为字符串@code{"<internal>"}。
+
+@item EXPR_LINENO
+@en This macro returns the line number at which the entity was declared, as
+@en an @code{int}.
+该宏返回被声明的实体所在的行号，作为一个@code{int}。
+
+@item DECL_ARTIFICIAL
+@en This predicate holds if the declaration was implicitly generated by the
+@en compiler.  For example, this predicate will hold of an implicitly
+@en declared member function, or of the @code{TYPE_DECL} implicitly
+@en generated for a class type.  Recall that in C++ code like:
+该断言用来表示声明是否为编译器隐式产生的。例如，该断言可以用来存放一个隐式声明的成员函数，或者为一个class类型隐式生成的@code{TYPE_DECL}。回想一下在C++代码中：
+@smallexample
+struct S @{@};
+@end smallexample
+@noindent
+@en is roughly equivalent to C code like:
+大体上等价于C代码：
+@smallexample
+struct S @{@};
+typedef struct S S;
+@end smallexample
+@en The implicitly generated @code{typedef} declaration is represented by a
+@en @code{TYPE_DECL} for which @code{DECL_ARTIFICIAL} holds.
+隐式生成的@code{typedef}声明由@code{TYPE_DECL}表示，在@code{DECL_ARTIFICIAL}中存放。
+
+@end ftable
+
+@en The various kinds of declarations include:
+各种类型的声明：
+@table @code
+@item LABEL_DECL
+@en These nodes are used to represent labels in function bodies.  For more
+@en information, see @ref{Functions}.  These nodes only appear in block
+@en scopes.
+这些节点用于表示函数体内的标号。更多信息，可以参考@ref{Functions}。这些节点只出现在块作用域（block scope）。
+
+@item CONST_DECL
+@en These nodes are used to represent enumeration constants.  The value of
+@en the constant is given by @code{DECL_INITIAL} which will be an
+@en @code{INTEGER_CST} with the same type as the @code{TREE_TYPE} of the
+@en @code{CONST_DECL}, i.e., an @code{ENUMERAL_TYPE}.
+这些节点用于表示枚举常量。常量的值由@code{DECL_INITIAL}给出，为一个@code{INTEGER_CST}，并且和@code{CONST_DECL}的@code{TREE_TYPE}具有相同的类型，即@code{ENUMERAL_TYPE}。 
+
+@item RESULT_DECL
+@en These nodes represent the value returned by a function.  When a value is
+@en assigned to a @code{RESULT_DECL}, that indicates that the value should
+@en be returned, via bitwise copy, by the function.  You can use
+@en @code{DECL_SIZE} and @code{DECL_ALIGN} on a @code{RESULT_DECL}, just as
+@en with a @code{VAR_DECL}.
+这些节点表示函数的返回值。当@code{RESULT_DECL}被赋予一个值的时候，这表明该值将被函数通过按位拷贝的方式返回。就像对于@code{VAR_DECL}一样，你可以在@code{RESULT_DECL}上使用@code{DECL_SIZE}和@code{DECL_ALIGN}。
+
+@item TYPE_DECL
+@en These nodes represent @code{typedef} declarations.  The @code{TREE_TYPE}
+@en is the type declared to have the name given by @code{DECL_NAME}.  In
+@en some cases, there is no associated name.
+这些节点表示@code{typedef}声明。@code{TREE_TYPE}为被声明的类型，其名字由@code{DECL_NAME}给出。有些情况下，没有相关联的名字。
+
+@item VAR_DECL
+@en These nodes represent variables with namespace or block scope, as well
+@en as static data members.  The @code{DECL_SIZE} and @code{DECL_ALIGN} are
+@en analogous to @code{TYPE_SIZE} and @code{TYPE_ALIGN}.  For a declaration,
+@en you should always use the @code{DECL_SIZE} and @code{DECL_ALIGN} rather
+@en than the @code{TYPE_SIZE} and @code{TYPE_ALIGN} given by the
+@en @code{TREE_TYPE}, since special attributes may have been applied to the
+@en variable to give it a particular size and alignment.  You may use the
+@en predicates @code{DECL_THIS_STATIC} or @code{DECL_THIS_EXTERN} to test
+@en whether the storage class specifiers @code{static} or @code{extern} were
+@en used to declare a variable.
+这些节点表示具有命名空间或者块作用域的变量，以及静态数据成员。@code{DECL_SIZE}和@code{DECL_ALIGN}，类似于@code{TYPE_SIZE}和@code{TYPE_ALIGN}。对于声明，你应该总是使用@code{DECL_SIZE}和@code{DECL_ALIGN}，而不是由@code{TREE_TYPE}给定的@code{TYPE_SIZE}和@code{TYPE_ALIGN}，因为，可能会对变量应用了特定的属性，使其具有特定的大小和对齐方式。你可以使用断言@code{DECL_THIS_STATIC}或@code{DECL_THIS_EXTERN}来测试是否使用了存储类别说明符@code{static}或@code{extern}来声明一个变量。
+
+@en If this variable is initialized (but does not require a constructor),
+@en the @code{DECL_INITIAL} will be an expression for the initializer.  The
+@en initializer should be evaluated, and a bitwise copy into the variable
+@en performed.  If the @code{DECL_INITIAL} is the @code{error_mark_node},
+@en there is an initializer, but it is given by an explicit statement later
+@en in the code; no bitwise copy is required.
+如果该变量被初始化（并需要一个构造者），则@code{DECL_INITIAL}将为初始化者的表达式。初始化者将被求值，并按位复制到变量中。如果@code{DECL_INITIAL}为@code{error_mark_node}，则表明存在一个初始化者，只不过它由之后代码中的显式的语句给出；这将不需要进行按位复制。
+
+@en GCC provides an extension that allows either automatic variables, or
+@en global variables, to be placed in particular registers.  This extension
+@en is being used for a particular @code{VAR_DECL} if @code{DECL_REGISTER}
+@en holds for the @code{VAR_DECL}, and if @code{DECL_ASSEMBLER_NAME} is not
+@en equal to @code{DECL_NAME}.  In that case, @code{DECL_ASSEMBLER_NAME} is
+@en the name of the register into which the variable will be placed.
+GCC提供了一个扩展，允许自动变量或者全局变量，被放到特定的寄存器中。如果@code{DECL_REGISTER}存放了@code{VAR_DECL}，并且@code{DECL_ASSEMBLER_NAME}不等于@code{DECL_NAME}，则@code{VAR_DECL}是使用了该扩展。这种情况下，@code{DECL_ASSEMBLER_NAME}为存放变量的寄存器的名字。
+
+@item PARM_DECL
+@en Used to represent a parameter to a function.  Treat these nodes
+@en similarly to @code{VAR_DECL} nodes.  These nodes only appear in the
+@en @code{DECL_ARGUMENTS} for a @code{FUNCTION_DECL}.
+用于表示一个函数的参数。这些节点可以作为@code{VAR_DECL}节点来看待。这些节点只出现在@code{FUNCTION_DECL}的@code{DECL_ARGUMENTS}中。
+
+@en The @code{DECL_ARG_TYPE} for a @code{PARM_DECL} is the type that will
+@en actually be used when a value is passed to this function.  It may be a
+@en wider type than the @code{TREE_TYPE} of the parameter; for example, the
+@en ordinary type might be @code{short} while the @code{DECL_ARG_TYPE} is
+@en @code{int}.
+@code{PARM_DECL}的@code{DECL_ARG_TYPE}为，当值传给函数时实际使用的类型。其可以为一个比参数的@code{TREE_TYPE}更宽的类型；例如，原始类型可能为@code{short}，而@code{DECL_ARG_TYPE}为@code{int}。
+
+@item DEBUG_EXPR_DECL
+Used to represent an anonymous debug-information temporary created to
+hold an expression as it is optimized away, so that its value can be
+referenced in debug bind statements.
+
+@item FIELD_DECL
+@en These nodes represent non-static data members.  The @code{DECL_SIZE} and
+@en @code{DECL_ALIGN} behave as for @code{VAR_DECL} nodes.  
+@en The position of the field within the parent record is specified by a 
+@en combination of three attributes.  @code{DECL_FIELD_OFFSET} is the position,
+@en counting in bytes, of the @code{DECL_OFFSET_ALIGN}-bit sized word containing
+@en the bit of the field closest to the beginning of the structure.  
+@en @code{DECL_FIELD_BIT_OFFSET} is the bit offset of the first bit of the field
+@en within this word; this may be nonzero even for fields that are not bit-fields,
+@en since @code{DECL_OFFSET_ALIGN} may be greater than the natural alignment
+@en of the field's type.
+这些节点表示非静态数据成员。@code{DECL_SIZE}和@code{DECL_ALIGN}的行为，跟@code{VAR_DECL}节点的一样。在父记录（parent record）中的域的位置，由三个属性组合指定。@code{DECL_FIELD_OFFSET}为按字节计数的位置，
+
+@en If @code{DECL_C_BIT_FIELD} holds, this field is a bit-field.  In a bit-field,
+@en @code{DECL_BIT_FIELD_TYPE} also contains the type that was originally
+@en specified for it, while DECL_TYPE may be a modified type with lesser precision,
+@en according to the size of the bit field.
+如果DECL_C_BIT_FIELD有效，则该域是一个位域。在位域中，DECL_BIT_FIELD_TYPE还包含了原始指定的类型，而DECL_TYPE可能是根据位域的大小，修改后具有更少精度的类型。
+
+@item NAMESPACE_DECL
+Namespaces provide a name hierarchy for other declarations.  They
+appear in the @code{DECL_CONTEXT} of other @code{_DECL} nodes.
+
+@end table
+
+@en @node Internal structure
+@en @subsection Internal structure
+@node Internal structure
+@subsection 内部结构
+
+@en @code{DECL} nodes are represented internally as a hierarchy of
+@en structures.
+@code{DECL}节点在内部被表示为层次结构体。
+
+@en @menu
+@en * Current structure hierarchy::  The current DECL node structure
+@en hierarchy.
+@en * Adding new DECL node types:: How to add a new DECL node to a
+@en frontend.
+@en @end menu
+@menu
+* Current structure hierarchy:: 目前DECL节点的结构层次
+* Adding new DECL node types:: 如何给前端添加一个新的DECL节点
+@end menu
+
+@en @node Current structure hierarchy
+@en @subsubsection Current structure hierarchy
+@node Current structure hierarchy
+@subsubsection 目前的结构层次
+
+@table @code
+
+@item struct tree_decl_minimal
+@en This is the minimal structure to inherit from in order for common
+@en @code{DECL} macros to work.  The fields it contains are a unique ID,
+@en source location, context, and name.
+这是用于继承的最小结构体，从而使得@code{DECL}宏更加通用。所包含的域为一个唯一的ID，源位置，上下文和名字。 
+
+@item struct tree_decl_common
+@en This structure inherits from @code{struct tree_decl_minimal}.  It
+@en contains fields that most @code{DECL} nodes need, such as a field to
+@en store alignment, machine mode, size, and attributes.
+该结构体继承于@code{struct tree_decl_minimal}。包含了大多@code{DECL}节点需要的域，像存储对齐信息，机器模式，大小和属性的域。 
+
+@item struct tree_field_decl
+@en This structure inherits from @code{struct tree_decl_common}.  It is
+@en used to represent @code{FIELD_DECL}.
+该结构体继承于@code{struct tree_decl_common}。用于表示@code{FIELD_DECL}。
+
+@item struct tree_label_decl
+@en This structure inherits from @code{struct tree_decl_common}.  It is
+@en used to represent @code{LABEL_DECL}.
+该结构体继承于@code{struct tree_decl_common}。用于表示@code{LABEL_DECL}。 
+
+@item struct tree_translation_unit_decl
+@en This structure inherits from @code{struct tree_decl_common}.  It is
+@en used to represent @code{TRANSLATION_UNIT_DECL}.
+该结构体继承于@code{struct tree_decl_common}。用于表示@code{TRANSLATION_UNIT_DECL}。 
+
+@item struct tree_decl_with_rtl
+@en This structure inherits from @code{struct tree_decl_common}.  It
+@en contains a field to store the low-level RTL associated with a
+@en @code{DECL} node.
+该结构体继承于@code{struct tree_decl_common}。包含了一个存储与@code{DECL}节点相关的低层次RTL。
+
+@item struct tree_result_decl
+@en This structure inherits from @code{struct tree_decl_with_rtl}.  It is
+@en used to represent @code{RESULT_DECL}.
+该结构体继承于@code{struct tree_decl_with_rtl}。用于表示@code{RESULT_DECL}。 
+
+@item struct tree_const_decl
+@en This structure inherits from @code{struct tree_decl_with_rtl}.  It is
+@en used to represent @code{CONST_DECL}.
+该结构体继承于@code{struct tree_decl_with_rtl}。用于表示@code{CONST_DECL}。 
+
+@item struct tree_parm_decl
+@en This structure inherits from @code{struct tree_decl_with_rtl}.  It is
+@en used to represent @code{PARM_DECL}.  
+该结构体继承于@code{struct tree_decl_with_rtl}。用于表示@code{PARM_DECL}。 
+
+@item struct tree_decl_with_vis
+@en This structure inherits from @code{struct tree_decl_with_rtl}.  It
+@en contains fields necessary to store visibility information, as well as
+@en a section name and assembler name.
+该结构体继承于@code{struct tree_decl_with_rtl}。包含了存储可视性信息所需要的域，还有一个section名和汇编名。 
+
+@item struct tree_var_decl
+@en This structure inherits from @code{struct tree_decl_with_vis}.  It is
+@en used to represent @code{VAR_DECL}.  
+该结构体继承于@code{struct tree_decl_with_vis}。用于表示@code{VAR_DECL}。
+
+@item struct tree_function_decl
+@en This structure inherits from @code{struct tree_decl_with_vis}.  It is
+@en used to represent @code{FUNCTION_DECL}.  
+该结构体继承于@code{struct tree_decl_with_vis}。用于表示@code{FUNCTION_DECL}。
+
+@end table
+@en @node Adding new DECL node types
+@en @subsubsection Adding new DECL node types
+@node Adding new DECL node types
+@subsubsection 添加新的DECL节点类型
+
+@en Adding a new @code{DECL} tree consists of the following steps
+增加一个新的@code{DECL}树包含下列步骤
+
+@table @asis
+
+@en @item Add a new tree code for the @code{DECL} node
+@en For language specific @code{DECL} nodes, there is a @file{.def} file
+@en in each frontend directory where the tree code should be added.
+@en For @code{DECL} nodes that are part of the middle-end, the code should
+@en be added to @file{tree.def}.
+@item 为@code{DECL}节点增加一个新的树代码
+对于语言特定的@code{DECL}节点，在每个前端目录下有一个@file{.def}文件，用来添加树代码。对于属于中端一部分的@code{DECL}节点，代码应该添加到@file{tree.def}中。
+
+@en @item Create a new structure type for the @code{DECL} node
+@en These structures should inherit from one of the existing structures in
+@en the language hierarchy by using that structure as the first member.
+@item 为@code{DECL}节点创建一个新的结构体类型
+这些结构体应该继承于现有的层次结构体，方法是使用该结构体作为第一个成员。
+
+@smallexample
+struct tree_foo_decl
+@{
+   struct tree_decl_with_vis common;
+@}
+@end smallexample
+
+@en Would create a structure name @code{tree_foo_decl} that inherits from
+@en @code{struct tree_decl_with_vis}.
+将会创建一个名为@code{tree_foo_decl}的结构体，继承于@code{struct tree_decl_with_vis}。
+
+@en For language specific @code{DECL} nodes, this new structure type
+@en should go in the appropriate @file{.h} file.
+@en For @code{DECL} nodes that are part of the middle-end, the structure
+@en type should go in @file{tree.h}.
+对于语言特定的@code{DECL}节点，这个新的结构体类型应该放在合适的@file{.h}文件中。对于属于中端一部分的@code{DECL}节点，结构体类型应该在@file{tree.h}中。
+
+@en @item Add a member to the tree structure enumerator for the node
+@en For garbage collection and dynamic checking purposes, each @code{DECL}
+@en node structure type is required to have a unique enumerator value
+@en specified with it.
+@en For language specific @code{DECL} nodes, this new enumerator value
+@en should go in the appropriate @file{.def} file.
+@en For @code{DECL} nodes that are part of the middle-end, the enumerator
+@en values are specified in @file{treestruct.def}.
+@item 向树结构枚举中增加一个节点成员
+出于垃圾搜集和动态检查的目的，每个@code{DECL}节点结构体类型需要具有一个唯一的枚举值用来指定它。对于语言特定的@code{DECL}节点，该新的枚举值应该在合适的.def文中。对于属于中端的@code{DECL}节点，枚举值在@file{treestruct.def}中指定。
+
+@en @item Update @code{union tree_node}
+@en In order to make your new structure type usable, it must be added to
+@en @code{union tree_node}.
+@en For language specific @code{DECL} nodes, a new entry should be added
+@en to the appropriate @file{.h} file of the form
+@item 更新@code{union tree_node}
+为了使得新的结构体类型可用，其必须被添加到@code{union tree_node}中。对于语言特定的@code{DECL}节点，一个新的项应该被添加到合适的@file{.h}文件中，形式如下 
+@smallexample
+  struct tree_foo_decl GTY ((tag ("TS_VAR_DECL"))) foo_decl;
+@end smallexample
+@en For @code{DECL} nodes that are part of the middle-end, the additional
+@en member goes directly into @code{union tree_node} in @file{tree.h}.
+对于属于中端的@code{DECL}节点，额外的成员直接放在@file{tree.h}里的@code{union tree_node}中。
+For @code{DECL} nodes that are part of the middle-end, the additional
+
+@en @item Update dynamic checking info
+@en In order to be able to check whether accessing a named portion of
+@en @code{union tree_node} is legal, and whether a certain @code{DECL} node
+@en contains one of the enumerated @code{DECL} node structures in the
+@en hierarchy, a simple lookup table is used.
+@en This lookup table needs to be kept up to date with the tree structure
+@en hierarchy, or else checking and containment macros will fail
+@en inappropriately.
+@item 更新动态检查信息
+为了能够检查访问@code{union tree_node}的一个命名部分是否合法，以及特定的@code{DECL}节点是否包含了枚举的@code{DECL}节点结构体，我们使用了一个简单的查找表。该查找表需要随着树结构层次一起更新，否则用于检查和包含的宏将会失败。
+
+@en For language specific @code{DECL} nodes, their is an @code{init_ts}
+@en function in an appropriate @file{.c} file, which initializes the lookup
+@en table.
+@en Code setting up the table for new @code{DECL} nodes should be added
+@en there.
+@en For each @code{DECL} tree code and enumerator value representing a
+@en member of the inheritance  hierarchy, the table should contain 1 if
+@en that tree code inherits (directly or indirectly) from that member.
+@en Thus, a @code{FOO_DECL} node derived from @code{struct decl_with_rtl},
+@en and enumerator value @code{TS_FOO_DECL}, would be set up as follows
+对于语言特定的@code{DECL}节点，它们是在合适的@file{.c}文件中的@code{init_ts}函数，用于初始化查找表。为新的@code{DECL}节点建立表格的代码应该添加到这里。对于每个表示继承层次的成员的@code{DECL}树代码和枚举值，如果树代码（直接或间接）继承于那个成员，则表应该包含1。因此，一个源于@code{struct decl_with_rtl}的，枚举值为@code{TS_FOO_DECL}的@code{FOO_DECL}节点，会使用下列方式来建立。
+@smallexample
+tree_contains_struct[FOO_DECL][TS_FOO_DECL] = 1;
+tree_contains_struct[FOO_DECL][TS_DECL_WRTL] = 1;
+tree_contains_struct[FOO_DECL][TS_DECL_COMMON] = 1;
+tree_contains_struct[FOO_DECL][TS_DECL_MINIMAL] = 1;
+@end smallexample
+
+@en For @code{DECL} nodes that are part of the middle-end, the setup code
+@en goes into @file{tree.c}.
+对于属于中端的@code{DECL}节点，建表代码在@file{tree.c}中。
+
+@en @item Add macros to access any new fields and flags
+@item 增加访问任何新的域和标识的宏 
+
+@en Each added field or flag should have a macro that is used to access
+@en it, that performs appropriate checking to ensure only the right type of
+@en @code{DECL} nodes access the field.
+每个增加的域或标识，都应有一个宏用来访问它，并且执行适当的检查以保证访问的是正确类型的@code{DECL}。
+
+@en These macros generally take the following form
+这些宏通常采用下面的形式
+@smallexample
+#define FOO_DECL_FIELDNAME(NODE) FOO_DECL_CHECK(NODE)->foo_decl.fieldname
+@end smallexample
+@en However, if the structure is simply a base class for further
+@en structures, something like the following should be used
+但是，如果结构体只是更多结构体的一个基类，有时会使用下面的形式
+@smallexample
+#define BASE_STRUCT_CHECK(T) CONTAINS_STRUCT_CHECK(T, TS_BASE_STRUCT)
+#define BASE_STRUCT_FIELDNAME(NODE) \
+   (BASE_STRUCT_CHECK(NODE)->base_struct.fieldname
+@end smallexample
+
+@end table
+
+
+@c ---------------------------------------------------------------------
+@c Attributes
+@c ---------------------------------------------------------------------
+@en @node Attributes
+@en @section Attributes in trees
+@node Attributes
+@section 树中的属性
+@cindex attributes
+
+@en Attributes, as specified using the @code{__attribute__} keyword, are
+@en represented internally as a @code{TREE_LIST}.  The @code{TREE_PURPOSE}
+@en is the name of the attribute, as an @code{IDENTIFIER_NODE}.  The
+@en @code{TREE_VALUE} is a @code{TREE_LIST} of the arguments of the
+@en attribute, if any, or @code{NULL_TREE} if there are no arguments; the
+@en arguments are stored as the @code{TREE_VALUE} of successive entries in
+@en the list, and may be identifiers or expressions.  The @code{TREE_CHAIN}
+@en of the attribute is the next attribute in a list of attributes applying
+@en to the same declaration or type, or @code{NULL_TREE} if there are no
+@en further attributes in the list.
+使用关键字@code{__attribute__}指定的属性，在内部作为@code{TREE_LIST}来表示。@code{TREE_PURPOSE} ，作为一个@code{IDENTIFIER_NODE}，是属性的名字。如果有参数的话，@code{TREE_VALUE}是一个属性参数的@code{TREE_LIST}，或者在没有参数时，为@code{NULL_TREE}。参数作为列表中的@code{TREE_VALUE}后继项存储，并且可以为标识符或者表达式。属性的@code{TREE_CHAIN}是在属性列表中应用到同一声明或类型的下一个属性，或者为@code{NULL_TREE}如果列表中没有更多的属性。
+
+@en Attributes may be attached to declarations and to types; these
+@en attributes may be accessed with the following macros.  All attributes
+@en are stored in this way, and many also cause other changes to the
+@en declaration or type or to other internal compiler data structures.
+属性可以附加到声明和类型上；这些属性可以通过下列宏来访问。所有的属性都通过这种方式存储，并且许多还对声明和类型，或者其它内部编译器数据结构体，引起其它的变化。
+
+@deftypefn {Tree Macro} tree DECL_ATTRIBUTES (tree @var{decl})
+@en This macro returns the attributes on the declaration @var{decl}.
+该宏返回声明@var{decl}上的属性。
+@end deftypefn
+
+@deftypefn {Tree Macro} tree TYPE_ATTRIBUTES (tree @var{type})
+@en This macro returns the attributes on the type @var{type}.
+该宏返回类型@var{type}上的属性。
+@end deftypefn
+
+
+@c ---------------------------------------------------------------------
+@c Expressions
+@c ---------------------------------------------------------------------
+
+@en @node Expression trees
+@en @section Expressions
+@node Expression trees
+@section 表达式
+@cindex expression
+@findex TREE_TYPE
+@findex TREE_OPERAND
+
+@en The internal representation for expressions is for the most part quite
+@en straightforward.  However, there are a few facts that one must bear in
+@en mind.  In particular, the expression ``tree'' is actually a directed
+@en acyclic graph.  (For example there may be many references to the integer
+@en constant zero throughout the source program; many of these will be
+@en represented by the same expression node.)  You should not rely on
+@en certain kinds of node being shared, nor should you rely on certain kinds of
+@en nodes being unshared.
+表达式的内部表示大多都很简单明了。但是，也有一些事实必须牢记。尤其是，表达式“tree”实际上是一个有向无环图。（例如，整个源程序中可能会有许多对常整数0的引用；这些将会由同一个表达式节点来表示。）当然，你不要以此就认为某些种类的节点是共享的，也不要认为某些种类的节点没有被共享。
+ 
+@en The following macros can be used with all expression nodes:
+下列宏可以用于所有表达式节点：
+
+@ftable @code
+@item TREE_TYPE
+@en Returns the type of the expression.  This value may not be precisely the
+@en same type that would be given the expression in the original program.
+返回表达式的类型。该值可能不是与原始程序中给出的表达式相同精度的类型。 
+@end ftable
+
+@en In what follows, some nodes that one might expect to always have type
+@en @code{bool} are documented to have either integral or boolean type.  At
+@en some point in the future, the C front end may also make use of this same
+@en intermediate representation, and at this point these nodes will
+@en certainly have integral type.  The previous sentence is not meant to
+@en imply that the C++ front end does not or will not give these nodes
+@en integral type.
+在下文中，有些节点可能总是期望具有@code{bool}类型，但是被记载为具有整形或bool型。将来的某个时刻，C前端可能也会使用该相同的中间表示，那时，这些节点当然会具有整数类型。当然，这并不意味着暗示C++前端中这些节点不具有，或者不会具有整数类型。
+
+@en Below, we list the various kinds of expression nodes.  Except where
+@en noted otherwise, the operands to an expression are accessed using the
+@en @code{TREE_OPERAND} macro.  For example, to access the first operand to
+@en a binary plus expression @code{expr}, use:
+下面，我们列出了各种表达式节点。除了特别注明的以外，表达式的操作数都通过@code{TREE_OPERAND}宏来访问。例如，要访问二元加法表达式@code{expr}的第一个操作数，使用：
+
+@smallexample
+TREE_OPERAND (expr, 0)
+@end smallexample
+@noindent
+
+@en As this example indicates, the operands are zero-indexed.
+正如这个例子所示，操作数是从0开始索引的。
+
+
+@menu
+* Constants: Constant expressions.
+* Storage References::
+* Unary and Binary Expressions::
+* Vectors::
+@end menu
+
+@en @node Constant expressions
+@en @subsection Constant expressions
+@node Constant expressions
+@subsection 常量表达式
+@tindex INTEGER_CST
+@findex TREE_INT_CST_HIGH
+@findex TREE_INT_CST_LOW
+@findex tree_int_cst_lt
+@findex tree_int_cst_equal
+@tindex REAL_CST
+@tindex FIXED_CST
+@tindex COMPLEX_CST
+@tindex VECTOR_CST
+@tindex STRING_CST
+@findex TREE_STRING_LENGTH
+@findex TREE_STRING_POINTER
+
+@en The table below begins with constants, moves on to unary expressions,
+@en then proceeds to binary expressions, and concludes with various other
+@en kinds of expressions:
+下面的列表格首先介绍了常数，接着是一元表达式，然后是二元表达式，以及各种其它类型的表达式：
+
+@table @code
+@item INTEGER_CST
+@en These nodes represent integer constants.  Note that the type of these
+@en constants is obtained with @code{TREE_TYPE}; they are not always of type
+@en @code{int}.  In particular, @code{char} constants are represented with
+@en @code{INTEGER_CST} nodes.  The value of the integer constant @code{e} is
+@en given by
+这些节点表示整数常量。注意这些常量的类型通过@code{TREE_TYPE}来获得；并不总是@code{int}型的。特别是，
+@code{char}型常量使用@code{INTEGER_CST}节点表示。整数常量@code{e}的值通过下面的方式给出
+@smallexample
+((TREE_INT_CST_HIGH (e) << HOST_BITS_PER_WIDE_INT)
++ TREE_INST_CST_LOW (e))
+@end smallexample
+@noindent
+@en HOST_BITS_PER_WIDE_INT is at least thirty-two on all platforms.  Both
+@en @code{TREE_INT_CST_HIGH} and @code{TREE_INT_CST_LOW} return a
+@en @code{HOST_WIDE_INT}.  The value of an @code{INTEGER_CST} is interpreted
+@en as a signed or unsigned quantity depending on the type of the constant.
+@en In general, the expression given above will overflow, so it should not
+@en be used to calculate the value of the constant.
+HOST_BITS_PER_WIDE_INT在所有的平台上最少为32。@code{TREE_INT_CST_HIGH}和@code{TREE_INT_CST_LOW}都返回一个@code{HOST_WIDE_INT}。一个@code{INTEGER_CST}的值根据常量的类型而被解析为有符号或无符号的数。一般来说，上面给出的表达式将会溢出，因此不要用来计算常量的值。
+
+@en The variable @code{integer_zero_node} is an integer constant with value
+@en zero.  Similarly, @code{integer_one_node} is an integer constant with
+@en value one.  The @code{size_zero_node} and @code{size_one_node} variables
+@en are analogous, but have type @code{size_t} rather than @code{int}.
+变量@code{integer_zero_node}是一个值为0的整数常量。类似的，@code{integer_one_node}是值为1的整数常量。变量@code{size_zero_node}和@code{size_one_node}比较类似，只是具有@code{size_t}类型，而不是@code{int}。
+
+@en The function @code{tree_int_cst_lt} is a predicate which holds if its
+@en first argument is less than its second.  Both constants are assumed to
+@en have the same signedness (i.e., either both should be signed or both
+@en should be unsigned.)  The full width of the constant is used when doing
+@en the comparison; the usual rules about promotions and conversions are
+@en ignored.  Similarly, @code{tree_int_cst_equal} holds if the two
+@en constants are equal.  The @code{tree_int_cst_sgn} function returns the
+@en sign of a constant.  The value is @code{1}, @code{0}, or @code{-1}
+@en according on whether the constant is greater than, equal to, or less
+@en than zero.  Again, the signedness of the constant's type is taken into
+@en account; an unsigned constant is never less than zero, no matter what
+@en its bit-pattern.
+函数@code{tree_int_cst_lt}是一个断言，当第一个参数小于第二个时有效。两个常量被假设为具有相同的符号性（即，要么都是有符号的，要么都是无符号的。）在作比较时，使用常量的全部宽度；并忽略掉通常的类型提升和转换规则。类似的，@code{tree_int_cst_equal}在两个常熟相等时有效。函数@code{tree_int_cst_sgn}返回常数的符号。根据常数是大于，等于，或小于0，而返回值@code{1}, @code{0}或@code{-1}。此外，会顾及到常数类型的符号性；无符号常数是永远小于0的，不论它的位模式如何。
+
+@item REAL_CST
+
+@en FIXME: Talk about how to obtain representations of this constant, do
+@en comparisons, and so forth.
+FIXME: 讨论如何获得该常量的表示，如何进行比较等等。
+
+@item FIXED_CST
+
+@en These nodes represent fixed-point constants.  The type of these constants
+@en is obtained with @code{TREE_TYPE}.  @code{TREE_FIXED_CST_PTR} points to
+@en a @code{struct fixed_value};  @code{TREE_FIXED_CST} returns the structure
+@en itself.  @code{struct fixed_value} contains @code{data} with the size of two
+@en @code{HOST_BITS_PER_WIDE_INT} and @code{mode} as the associated fixed-point
+@en machine mode for @code{data}.
+这些节点表示定点常数。这些常量的类型通过@code{TREE_TYPE}获得。@code{TREE_FIXED_CST_PTR}指向struct fixed_value；@code{TREE_FIXED_CST}返回结构体本身。Struct fixed_value包含了具有2个HOST_BITS_PER_WIDE_INT大小的@code{data}，以及与@code{data}关联的定点机器模式@code{mode}。
+
+@item COMPLEX_CST
+@en These nodes are used to represent complex number constants, that is a
+@en @code{__complex__} whose parts are constant nodes.  The
+@en @code{TREE_REALPART} and @code{TREE_IMAGPART} return the real and the
+@en imaginary parts respectively.
+这些节点用于表示复数常量，即@code{__complex__} ，其组成部分为常数节点。@code{TREE_REALPART}和@code{TREE_IMAGPART}返回相应的实部和虚部。
+
+@item VECTOR_CST
+@en These nodes are used to represent vector constants, whose parts are
+@en constant nodes.  Each individual constant node is either an integer or a
+@en double constant node.  The first operand is a @code{TREE_LIST} of the
+@en constant nodes and is accessed through @code{TREE_VECTOR_CST_ELTS}.
+这些节点用于表示向量常数，其组成部分为常量节点。每个单独的常量节点或者是一个常整数节点，或者是一个双精度的常数节点。第一个操作数为常数节点的@code{TREE_LIST}，并可以通过@code{TREE_VECTOR_CST_ELTS}来访问。
+
+@item STRING_CST
+@en These nodes represent string-constants.  The @code{TREE_STRING_LENGTH}
+@en returns the length of the string, as an @code{int}.  The
+@en @code{TREE_STRING_POINTER} is a @code{char*} containing the string
+@en itself.  The string may not be @code{NUL}-terminated, and it may contain
+@en embedded @code{NUL} characters.  Therefore, the
+@en @code{TREE_STRING_LENGTH} includes the trailing @code{NUL} if it is
+@en present.
+这些节点表示字符串常量。@code{TREE_STRING_LENGTH}返回@code{int}型的字符串长度。@code{TREE_STRING_POINTER}是一个@code{char*}型，包含了字符串本身。字符串可以不是@code{NUL}结尾的，并且可以包含嵌入的@code{NUL}字符。因此，如果字符串的结尾存在@code{NUL}，则@code{TREE_STRING_LENGTH}也包括了结尾的NUL。
+
+@en For wide string constants, the @code{TREE_STRING_LENGTH} is the number
+@en of bytes in the string, and the @code{TREE_STRING_POINTER}
+@en points to an array of the bytes of the string, as represented on the
+@en target system (that is, as integers in the target endianness).  Wide and
+@en non-wide string constants are distinguished only by the @code{TREE_TYPE}
+@en of the @code{STRING_CST}.
+对于宽字符串常量，@code{TREE_STRING_LENGTH}为字符串的字节数，并且@code{TREE_STRING_POINTER}指向在目标系统上表示的，字符串的字节数组（即，符合目标大小端的整数系列）。宽字符串和非宽字符串常量，只区别于@code{STRING_CST}的@code{TREE_TYPE}。
+
+@en FIXME: The formats of string constants are not well-defined when the
+@en target system bytes are not the same width as host system bytes.
+FIXME: 当目标系统的字节与主机系统的字节宽度不同时，字符串的格式没有被很好的定义。
+
+@end table
+
+@en @node Storage References
+@en @subsection References to storage
+@node Storage References
+@subsection 存储引用
+@tindex ADDR_EXPR
+@tindex INDIRECT_REF
+@tindex MEM_REF
+@tindex ARRAY_REF
+@tindex ARRAY_RANGE_REF
+@tindex TARGET_MEM_REF
+@tindex COMPONENT_REF
+
+@table @code
+@item ARRAY_REF
+@en These nodes represent array accesses.  The first operand is the array;
+@en the second is the index.  To calculate the address of the memory
+@en accessed, you must scale the index by the size of the type of the array
+@en elements.  The type of these expressions must be the type of a component of
+@en the array.  The third and fourth operands are used after gimplification
+@en to represent the lower bound and component size but should not be used
+@en directly; call @code{array_ref_low_bound} and @code{array_ref_element_size}
+@en instead.
+这些节点表示对数组的访问。第一个操作数为数组；第二个为索引。要计算被访问内存的地址，你必须要根据比例，用数组元素的类型大小来乘以索引。这些表达式的类型必须为数组元素的类型。第三和第四个操作数在gimplification之后使用，来表示下界和元素大小；但是不要直接使用它们，相应的，调用@code{array_ref_low_bound}和@code{array_ref_element_size}。
+
+@item ARRAY_RANGE_REF
+@en These nodes represent access to a range (or ``slice'') of an array.  The
+@en operands are the same as that for @code{ARRAY_REF} and have the same
+@en meanings.  The type of these expressions must be an array whose component
+@en type is the same as that of the first operand.  The range of that array
+@en type determines the amount of data these expressions access.
+这些节点表示对数组的一个范围（或者说切片）的访问。操作数与@code{ARRAY_REF}相同，并具有相同的含义。这些表达式的类型必须是一个数组，其元素的类型与第一个操作数的类型相同。数组类型的范围决定了这些表达式访问的数据数目。
+
+@item TARGET_MEM_REF
+@en These nodes represent memory accesses whose address directly map to
+@en an addressing mode of the target architecture.  The first argument
+@en is @code{TMR_SYMBOL} and must be a @code{VAR_DECL} of an object with
+@en a fixed address.  The second argument is @code{TMR_BASE} and the
+@en third one is @code{TMR_INDEX}.  The fourth argument is
+@en @code{TMR_STEP} and must be an @code{INTEGER_CST}.  The fifth
+@en argument is @code{TMR_OFFSET} and must be an @code{INTEGER_CST}.
+@en Any of the arguments may be NULL if the appropriate component
+@en does not appear in the address.  Address of the @code{TARGET_MEM_REF}
+@en is determined in the following way.
+这些节点表示内存访问，并且其地址直接映射到目标体系结构的寻址模式。第一个参数为@code{TMR_SYMBOL}，并且必须为具有固定地址的对象的@code{VAR_DECL}。第二个参数为@code{TMR_BASE}，第三个为@code{TMR_INDEX}。第四个参数为@code{TMR_STEP}，并且必须为@code{INTEGER_CST}。第五个参数为@code{TMR_OFFSET}，并且必须为@code{INTEGER_CST}。如果相应的部分没有在地址中出现，则参数可以为NULL。@code{TARGET_MEM_REF}的地址通过下列方法来确定。
+
+@smallexample
+&TMR_SYMBOL + TMR_BASE + TMR_INDEX * TMR_STEP + TMR_OFFSET
+@end smallexample
+
+@en The sixth argument is the reference to the original memory access, which
+@en is preserved for the purposes of the RTL alias analysis.  The seventh
+@en argument is a tag representing the results of tree level alias analysis.
+第六个参数为对原始内存访问的引用，其被保留下来，用于RTL别名分析。第七个参数为一个标记，表示tree级的别名分析的结果。
+
+@item ADDR_EXPR
+@en These nodes are used to represent the address of an object.  (These
+@en expressions will always have pointer or reference type.)  The operand may
+@en be another expression, or it may be a declaration.
+这些节点用于表示对象的地址。（这些表达式将总是具有指针或引用类型。）操作数或者为表达式，或者可以是一个声明。
+
+@en As an extension, GCC allows users to take the address of a label.  In
+@en this case, the operand of the @code{ADDR_EXPR} will be a
+@en @code{LABEL_DECL}.  The type of such an expression is @code{void*}.
+作为扩展，GCC运行用户使用标号的地址。这种情况下，@code{ADDR_EXPR}的操作数将为@code{LABEL_DECL}。这样的表达式的类型是@code{void*}。
+
+@en If the object addressed is not an lvalue, a temporary is created, and
+@en the address of the temporary is used.
+如果求址的对象不是左值，则创建一个临时的，并使用临时对象的地址。
+
+@item INDIRECT_REF
+@en These nodes are used to represent the object pointed to by a pointer.
+@en The operand is the pointer being dereferenced; it will always have
+@en pointer or reference type.
+这些节点用来表示由指针指向的对象。操作数是被dereferenced的指针；其总是具有指针或引用类型。
+
+@item MEM_REF
+These nodes are used to represent the object pointed to by a pointer
+offset by a constant.
+The first operand is the pointer being dereferenced; it will always have
+pointer or reference type.  The second operand is a pointer constant.
+Its type is specifying the type to be used for type-based alias analysis.
+
+@item COMPONENT_REF
+@en These nodes represent non-static data member accesses.  The first
+@en operand is the object (rather than a pointer to it); the second operand
+@en is the @code{FIELD_DECL} for the data member.  The third operand represents
+@en the byte offset of the field, but should not be used directly; call
+@en @code{component_ref_field_offset} instead.
+这些节点表示对non-static数据成员的访问。第一个操作数为对象（而不是指向它的指针）；第二个操作数为数据成员的@code{FIELD_DECL}。第三个操作数表示域的字节偏移量，但不要直接使用；相应的，调用@code{component_ref_field_offset}。
+
+@end table
+
+@en @node Unary and Binary Expressions
+@en @subsection Unary and Binary Expressions
+@node Unary and Binary Expressions
+@subsection 一元和二元表达式
+@tindex NEGATE_EXPR
+@tindex ABS_EXPR
+@tindex BIT_NOT_EXPR
+@tindex TRUTH_NOT_EXPR
+@tindex PREDECREMENT_EXPR
+@tindex PREINCREMENT_EXPR
+@tindex POSTDECREMENT_EXPR
+@tindex POSTINCREMENT_EXPR
+@tindex FIX_TRUNC_EXPR
+@tindex FLOAT_EXPR
+@tindex COMPLEX_EXPR
+@tindex CONJ_EXPR
+@tindex REALPART_EXPR
+@tindex IMAGPART_EXPR
+@tindex NON_LVALUE_EXPR
+@tindex NOP_EXPR
+@tindex CONVERT_EXPR
+@tindex FIXED_CONVERT_EXPR
+@tindex THROW_EXPR
+@tindex LSHIFT_EXPR
+@tindex RSHIFT_EXPR
+@tindex BIT_IOR_EXPR
+@tindex BIT_XOR_EXPR
+@tindex BIT_AND_EXPR
+@tindex TRUTH_ANDIF_EXPR
+@tindex TRUTH_ORIF_EXPR
+@tindex TRUTH_AND_EXPR
+@tindex TRUTH_OR_EXPR
+@tindex TRUTH_XOR_EXPR
+@tindex POINTER_PLUS_EXPR
+@tindex PLUS_EXPR
+@tindex MINUS_EXPR
+@tindex MULT_EXPR
+@tindex RDIV_EXPR
+@tindex TRUNC_DIV_EXPR
+@tindex FLOOR_DIV_EXPR
+@tindex CEIL_DIV_EXPR
+@tindex ROUND_DIV_EXPR
+@tindex TRUNC_MOD_EXPR
+@tindex FLOOR_MOD_EXPR
+@tindex CEIL_MOD_EXPR
+@tindex ROUND_MOD_EXPR
+@tindex EXACT_DIV_EXPR
+@tindex LT_EXPR
+@tindex LE_EXPR
+@tindex GT_EXPR
+@tindex GE_EXPR
+@tindex EQ_EXPR
+@tindex NE_EXPR
+@tindex ORDERED_EXPR
+@tindex UNORDERED_EXPR
+@tindex UNLT_EXPR
+@tindex UNLE_EXPR
+@tindex UNGT_EXPR
+@tindex UNGE_EXPR
+@tindex UNEQ_EXPR
+@tindex LTGT_EXPR
+@tindex MODIFY_EXPR
+@tindex INIT_EXPR
+@tindex COMPOUND_EXPR
+@tindex COND_EXPR
+@tindex CALL_EXPR
+@tindex STMT_EXPR
+@tindex BIND_EXPR
+@tindex LOOP_EXPR
+@tindex EXIT_EXPR
+@tindex CLEANUP_POINT_EXPR
+@tindex CONSTRUCTOR
+@tindex COMPOUND_LITERAL_EXPR
+@tindex SAVE_EXPR
+@tindex TARGET_EXPR
+@tindex VA_ARG_EXPR
+
+@table @code
+@item NEGATE_EXPR
+@en These nodes represent unary negation of the single operand, for both
+@en integer and floating-point types.  The type of negation can be
+@en determined by looking at the type of the expression.
+这些节点表示对单个,整数或浮点类型的操作数，进行一元取负运算。取负运算结果的类型可以通过查看表达式的类型来决定。
+
+@en The behavior of this operation on signed arithmetic overflow is
+@en controlled by the @code{flag_wrapv} and @code{flag_trapv} variables.
+该操作在有符号算术溢出时的行为，由@code{flag_wrapv}和@code{flag_trapv}变量来控制。
+
+@item ABS_EXPR
+@en These nodes represent the absolute value of the single operand, for
+@en both integer and floating-point types.  This is typically used to
+@en implement the @code{abs}, @code{labs} and @code{llabs} builtins for
+@en integer types, and the @code{fabs}, @code{fabsf} and @code{fabsl}
+@en builtins for floating point types.  The type of abs operation can
+@en be determined by looking at the type of the expression.
+这些节点表示单个操作数，整数和浮点类型的，的绝对值。这通常用于实现整数类型的内建@code{abs}，@code{labs}和@code{llabs}，以及浮点类型的@code{fabs}，@code{fabsf}和@code{fabsl}。abs操作的类型可以通过查看表达式的类型来决定。
+
+@en This node is not used for complex types.  To represent the modulus
+@en or complex abs of a complex value, use the @code{BUILT_IN_CABS},
+@en @code{BUILT_IN_CABSF} or @code{BUILT_IN_CABSL} builtins, as used
+@en to implement the C99 @code{cabs}, @code{cabsf} and @code{cabsl}
+@en built-in functions.
+该节点不用于复数类型。要表示复数的模或者复数abs，使用内建的@code{BUILT_IN_CABS}, @code{BUILT_IN_CABSF}或@code{BUILT_IN_CABSL}，这些被用于实现C99的内建函数@code{cabs}, @code{cabsf}和@code{cabsl}。
+
+@item BIT_NOT_EXPR
+@en These nodes represent bitwise complement, and will always have integral
+@en type.  The only operand is the value to be complemented.
+这些节点表示按位求补运算，并总是具有整数型。唯一的操作数是要被求补的值。
+
+@item TRUTH_NOT_EXPR
+@en These nodes represent logical negation, and will always have integral
+@en (or boolean) type.  The operand is the value being negated.  The type
+@en of the operand and that of the result are always of @code{BOOLEAN_TYPE}
+@en or @code{INTEGER_TYPE}.
+这些节点表示逻辑非，并总是具有整数（或布尔）类型。操作数是要求非的值。操作数的，以及结果的类型总是@code{BOOLEAN_TYPE}或@code{INTEGER_TYPE}。 
+
+@item PREDECREMENT_EXPR
+@itemx PREINCREMENT_EXPR
+@itemx POSTDECREMENT_EXPR
+@itemx POSTINCREMENT_EXPR
+@en These nodes represent increment and decrement expressions.  The value of
+@en the single operand is computed, and the operand incremented or
+@en decremented.  In the case of @code{PREDECREMENT_EXPR} and
+@en @code{PREINCREMENT_EXPR}, the value of the expression is the value
+@en resulting after the increment or decrement; in the case of
+@en @code{POSTDECREMENT_EXPR} and @code{POSTINCREMENT_EXPR} is the value
+@en before the increment or decrement occurs.  The type of the operand, like
+@en that of the result, will be either integral, boolean, or floating-point.
+这些节点表示递增和递减表达式。单操作数的值将被计算，并且操作数递增或递减。在@code{PREDECREMENT_EXPR}和@code{PREINCREMENT_EXPR}的情况下，表达式的值是递增或递减之后的结果；在@code{POSTDECREMENT_EXPR}和@code{POSTINCREMENT_EXPR}的情况下，表达式的值是递增或递减发生前的值。操作数的值，跟结果的一样，将会是整数，布尔，或浮点的。
+
+@item FIX_TRUNC_EXPR
+@en These nodes represent conversion of a floating-point value to an
+@en integer.  The single operand will have a floating-point type, while
+@en the complete expression will have an integral (or boolean) type.  The
+@en operand is rounded towards zero.
+这些节点表示浮点值到整数的转换。单操作数将具有一个浮点类型，完整的表达式将具有整数（或布尔）类型。操作数向0方向舍入。
+
+@item FLOAT_EXPR
+@en These nodes represent conversion of an integral (or boolean) value to a
+@en floating-point value.  The single operand will have integral type, while
+@en the complete expression will have a floating-point type.
+这些节点表示整数（或布尔）值向浮点值的转换。单操作数将具有整数类型，而完整的表达式将具有浮点类型。
+
+@en FIXME: How is the operand supposed to be rounded?  Is this dependent on
+@en @option{-mieee}?
+FIXME: 操作数是如何被舍入的？这是不是取决于@option{-mieee}？
+
+@item COMPLEX_EXPR
+@en These nodes are used to represent complex numbers constructed from two
+@en expressions of the same (integer or real) type.  The first operand is the
+@en real part and the second operand is the imaginary part.
+这些节点用于表示通过两个相同类型（整数或实数）的表达式构造的复数。第一个操作数是实部，第二个操作数是虚部。
+
+@item CONJ_EXPR
+@en These nodes represent the conjugate of their operand.
+这些节点表示它们的操作数的共轭（conjugate）。 
+
+@item REALPART_EXPR
+@itemx IMAGPART_EXPR
+@en These nodes represent respectively the real and the imaginary parts
+@en of complex numbers (their sole argument).
+这些节点表示复数的相应实数和虚数部分。
+
+@item NON_LVALUE_EXPR
+@en These nodes indicate that their one and only operand is not an lvalue.
+@en A back end can treat these identically to the single operand.
+这些节点指示它们有且仅有的一个操作数不是左值的。后端可以将其作为单操作数来对待。
+
+@item NOP_EXPR
+@en These nodes are used to represent conversions that do not require any
+@en code-generation.  For example, conversion of a @code{char*} to an
+@en @code{int*} does not require any code be generated; such a conversion is
+@en represented by a @code{NOP_EXPR}.  The single operand is the expression
+@en to be converted.  The conversion from a pointer to a reference is also
+@en represented with a @code{NOP_EXPR}.
+这些节点用于表示不需要任何代码生成的转换。例如，由@code{char*}到@code{int*}不需要任何代码生成；这样的转换被表示为一个@code{NOP_EXPR}。单操作数为要转换的表达式。从指针到引用的转换也被表示为@code{NOP_EXPR}。
+
+@item CONVERT_EXPR
+@en These nodes are similar to @code{NOP_EXPR}s, but are used in those
+@en situations where code may need to be generated.  For example, if an
+@en @code{int*} is converted to an @code{int} code may need to be generated
+@en on some platforms.  These nodes are never used for C++-specific
+@en conversions, like conversions between pointers to different classes in
+@en an inheritance hierarchy.  Any adjustments that need to be made in such
+@en cases are always indicated explicitly.  Similarly, a user-defined
+@en conversion is never represented by a @code{CONVERT_EXPR}; instead, the
+@en function calls are made explicit.
+这些节点类似于@code{NOP_EXPR}，不过用于可能会有代码生成的情况。例如，如果@code{int*}被转换为@code{int}，则可能会在一些平台上需要生成代码。这些节点从来不被用于C++特定的转换，例如在一个继承体系中不同的类的指针间的转换。这种情况下的任何调整，总是需要被显式的指出。类似的，用户定义的转换也不使用@code{CONVERT_EXPR}表示；相反的，而是显式的调用函数。
+
+@item FIXED_CONVERT_EXPR
+@en These nodes are used to represent conversions that involve fixed-point
+@en values.  For example, from a fixed-point value to another fixed-point value,
+@en from an integer to a fixed-point value, from a fixed-point value to an
+@en integer, from a floating-point value to a fixed-point value, or from
+@en a fixed-point value to a floating-point value.
+这些节点用于表示涉及定点值的转换。例如，从一个定点值到另一个定点值，从一个整数到一个定点值，从一个定点值到一个整数，从一个浮点值到一个定点值，或者从一个定点值到一个浮点值。
+
+@item LSHIFT_EXPR
+@itemx RSHIFT_EXPR
+@en These nodes represent left and right shifts, respectively.  The first
+@en operand is the value to shift; it will always be of integral type.  The
+@en second operand is an expression for the number of bits by which to
+@en shift.  Right shift should be treated as arithmetic, i.e., the
+@en high-order bits should be zero-filled when the expression has unsigned
+@en type and filled with the sign bit when the expression has signed type.
+@en Note that the result is undefined if the second operand is larger
+@en than or equal to the first operand's type size.
+这些节点分别表示左移和右移。第一个操作数为要移动的值；其将总是为整数类型。第二个操作数为表示移动位数的表达式。右移将作为算术移动，即，当表达式具有无符号类型则高位填充0，当表达式具有有符号类型则高位填充符号位。注意如果第二个操作数大于或等于第一个操作数的类型大小，则结果无定义。
+
+@item BIT_IOR_EXPR
+@itemx BIT_XOR_EXPR
+@itemx BIT_AND_EXPR
+@en These nodes represent bitwise inclusive or, bitwise exclusive or, and
+@en bitwise and, respectively.  Both operands will always have integral
+@en type.
+这些节点分别表示位运算符“或”，“异或”，和“与”。所有操作数将总是为整数类型。 
+
+@item TRUTH_ANDIF_EXPR
+@itemx TRUTH_ORIF_EXPR
+@en These nodes represent logical ``and'' and logical ``or'', respectively.
+@en These operators are not strict; i.e., the second operand is evaluated
+@en only if the value of the expression is not determined by evaluation of
+@en the first operand.  The type of the operands and that of the result are
+@en always of @code{BOOLEAN_TYPE} or @code{INTEGER_TYPE}.
+这些节点分别表示逻辑“与”和“或”。这些操作符不是严格的；即第二个操作数只在通过求值第一个操作数无法确定表达式的值的时候，才被计算求值。操作数和结果的类型总是为@code{BOOLEAN_TYPE}或@code{INTEGER_TYPE}。
+
+@item TRUTH_AND_EXPR
+@itemx TRUTH_OR_EXPR
+@itemx TRUTH_XOR_EXPR
+@en These nodes represent logical and, logical or, and logical exclusive or.
+@en They are strict; both arguments are always evaluated.  There are no
+@en corresponding operators in C or C++, but the front end will sometimes
+@en generate these expressions anyhow, if it can tell that strictness does
+@en not matter.  The type of the operands and that of the result are
+@en always of @code{BOOLEAN_TYPE} or @code{INTEGER_TYPE}.
+这些节点表示逻辑与，或和异或。它们为严格的方式；所有参数都总是被计算求值。这在C或C++中没有对应的运算符，但是前端如果可以断定严格的方式没关系，则有时将会生成这些表达式。操作数和结果的类型总是为@code{BOOLEAN_TYPE}或@code{INTEGER_TYPE}。 
+
+@itemx POINTER_PLUS_EXPR
+@en This node represents pointer arithmetic.  The first operand is always
+@en a pointer/reference type.  The second operand is always an unsigned
+@en integer type compatible with sizetype.  This is the only binary
+@en arithmetic operand that can operate on pointer types.
+该节点表示指针算术运算。第一个操作数总是为一个指针/引用类型。第二个操作数总是为一个与sizetype兼容的无符号整数类型。这是唯一的可以操作指针类型的二元算术运算。 
+
+@itemx PLUS_EXPR
+@itemx MINUS_EXPR
+@itemx MULT_EXPR
+@en These nodes represent various binary arithmetic operations.
+@en Respectively, these operations are addition, subtraction (of the second
+@en operand from the first) and multiplication.  Their operands may have
+@en either integral or floating type, but there will never be case in which
+@en one operand is of floating type and the other is of integral type.
+这些节点表示不同的二元算术运算。分别为加法，减法和乘法。它们的操作数可以为整数或者浮点类型，但不会为一个是浮点类型的，而另一个是整数类型。
+
+@en The behavior of these operations on signed arithmetic overflow is
+@en controlled by the @code{flag_wrapv} and @code{flag_trapv} variables.
+这些运算在有符号算术溢出时的行为，由变量@code{flag_wrapv}和@code{flag_trapv}来控制。
+
+@item RDIV_EXPR
+@en This node represents a floating point division operation.
+该节点表示一个浮点除法运算。
+
+@item TRUNC_DIV_EXPR
+@itemx FLOOR_DIV_EXPR
+@itemx CEIL_DIV_EXPR
+@itemx ROUND_DIV_EXPR
+@en These nodes represent integer division operations that return an integer
+@en result.  @code{TRUNC_DIV_EXPR} rounds towards zero, @code{FLOOR_DIV_EXPR}
+@en rounds towards negative infinity, @code{CEIL_DIV_EXPR} rounds towards
+@en positive infinity and @code{ROUND_DIV_EXPR} rounds to the closest integer.
+@en Integer division in C and C++ is truncating, i.e.@: @code{TRUNC_DIV_EXPR}.
+这些节点表示返回整数结果的整数除法运算。@code{TRUNC_DIV_EXPR}向0方向舍入，@code{FLOOR_DIV_EXPR}向负无穷大舍入，@code{CEIL_DIV_EXPR}向正无穷大舍入，@code{ROUND_DIV_EXPR}向最近的整数舍入。C和C++中的整数除法为截断方式，即@code{TRUNC_DIV_EXPR}。
+
+@en The behavior of these operations on signed arithmetic overflow, when
+@en dividing the minimum signed integer by minus one, is controlled by the
+@en @code{flag_wrapv} and @code{flag_trapv} variables.
+这些运算在有符号算术溢出时的行为，由变量@code{flag_wrapv}和@code{flag_trapv}来控制。
+
+@item TRUNC_MOD_EXPR
+@itemx FLOOR_MOD_EXPR
+@itemx CEIL_MOD_EXPR
+@itemx ROUND_MOD_EXPR
+@en These nodes represent the integer remainder or modulus operation.
+@en The integer modulus of two operands @code{a} and @code{b} is
+@en defined as @code{a - (a/b)*b} where the division calculated using
+@en the corresponding division operator.  Hence for @code{TRUNC_MOD_EXPR}
+@en this definition assumes division using truncation towards zero, i.e.@:
+@en @code{TRUNC_DIV_EXPR}.  Integer remainder in C and C++ uses truncating
+@en division, i.e.@: @code{TRUNC_MOD_EXPR}.
+这些节点表示整数类型的求余或求模运算。两个操作数@code{a}和@code{b}的整型的模被定义为@code{a - (a/b)*b}，其中使用相应的除法操作符进行除法运算。因此，对于@code{TRUNC_MOD_EXPR}的定义，是假设使用了向零方向舍去的除法，即@code{TRUNC_DIV_EXPR}。C和C++中的整型求余，使用了舍去除法，即@code{TRUNC_MOD_EXPR}。
+
+@item EXACT_DIV_EXPR
+@en The @code{EXACT_DIV_EXPR} code is used to represent integer divisions where
+@en the numerator is known to be an exact multiple of the denominator.  This
+@en allows the backend to choose between the faster of @code{TRUNC_DIV_EXPR},
+@en @code{CEIL_DIV_EXPR} and @code{FLOOR_DIV_EXPR} for the current target.
+@code{EXACT_DIV_EXPR}用来表示整数除法，即分子已知为分母的确切的倍数。这使得后端可以从@code{TRUNC_DIV_EXPR}，@code{CEIL_DIV_EXPR}和@code{FLOOR_DIV_EXPR}中，为当前的目标机选择更快的运算。
+
+@item LT_EXPR
+@itemx LE_EXPR
+@itemx GT_EXPR
+@itemx GE_EXPR
+@itemx EQ_EXPR
+@itemx NE_EXPR
+@en These nodes represent the less than, less than or equal to, greater
+@en than, greater than or equal to, equal, and not equal comparison
+@en operators.  The first and second operand with either be both of integral
+@en type or both of floating type.  The result type of these expressions
+@en will always be of integral or boolean type.  These operations return
+@en the result type's zero value for false, and the result type's one value
+@en for true.
+这些节点表示小于，小于或等于，大于，大于或等于，等于，和不等于的比较运算符。第一个和第二个操作数或者都为整数类型，或者都为浮点类型。这些表达式的结果类型将总是为整数或布尔类型。如果为假，则这些运算返回值0，如果为真，则返回值1。
+
+@en For floating point comparisons, if we honor IEEE NaNs and either operand
+@en is NaN, then @code{NE_EXPR} always returns true and the remaining operators
+@en always return false.  On some targets, comparisons against an IEEE NaN,
+@en other than equality and inequality, may generate a floating point exception.
+对于浮点类型比较运算，如果我们使用了IEEE NaN，并且任意一个操作数为NaN，则@code{NE_EXPR}总是返回真，而其余的运算符总是返回假。在一些目标机上，对于IEEE NaN，除了等于和不等于以外的其它比较运算，可能会生成一个浮点异常。
+
+@item ORDERED_EXPR
+@itemx UNORDERED_EXPR
+@en These nodes represent non-trapping ordered and unordered comparison
+@en operators.  These operations take two floating point operands and
+@en determine whether they are ordered or unordered relative to each other.
+@en If either operand is an IEEE NaN, their comparison is defined to be
+@en unordered, otherwise the comparison is defined to be ordered.  The
+@en result type of these expressions will always be of integral or boolean
+@en type.  These operations return the result type's zero value for false,
+@en and the result type's one value for true.
+这些节点表示non-trapping的有序和无序的比较运算。这些运算接受两个浮点操作数，并确定它们之间是有序的，还是无序的。如果有一个操作数为IEEE NaN，则它们的比较被定以为无序的，否则为有序的。这些表达式的结果类型将总是为整数或者布尔类型。如果为假，则这些运算返回值0，如果为真，则返回值1。
+
+@item UNLT_EXPR
+@itemx UNLE_EXPR
+@itemx UNGT_EXPR
+@itemx UNGE_EXPR
+@itemx UNEQ_EXPR
+@itemx LTGT_EXPR
+@en These nodes represent the unordered comparison operators.
+@en These operations take two floating point operands and determine whether
+@en the operands are unordered or are less than, less than or equal to,
+@en greater than, greater than or equal to, or equal respectively.  For
+@en example, @code{UNLT_EXPR} returns true if either operand is an IEEE
+@en NaN or the first operand is less than the second.  With the possible
+@en exception of @code{LTGT_EXPR}, all of these operations are guaranteed
+@en not to generate a floating point exception.  The result
+@en type of these expressions will always be of integral or boolean type.
+@en These operations return the result type's zero value for false,
+@en and the result type's one value for true.
+这些节点表示无序比较运算符。这些运算接受两个浮点操作数，并分别确定它们之间是否为无序的，小于，小于或等于，大于，大于或等于，或者等于。例如，如果一个操作数为IEEE NaN，或者第一个操作数小于第二个，则@code{UNLT_EXPR}返回真。除了@code{LTGT_EXPR}可能会产生异常，其它的运算都保证不会产生浮点异常。这些表达式的结果类型将总是为整数或者布尔类型。如果为假，则这些运算返回值0，如果为真，则返回值1。
+
+@item MODIFY_EXPR
+@en These nodes represent assignment.  The left-hand side is the first
+@en operand; the right-hand side is the second operand.  The left-hand side
+@en will be a @code{VAR_DECL}, @code{INDIRECT_REF}, @code{COMPONENT_REF}, or
+@en other lvalue.
+这些节点表示赋值。左手边为第一个操作数，右手边为第二个操作数。左手边为一个@code{VAR_DECL}, @code{INDIRECT_REF}, @code{COMPONENT_REF}，或者其它左值。
+
+@en These nodes are used to represent not only assignment with @samp{=} but
+@en also compound assignments (like @samp{+=}), by reduction to @samp{=}
+@en assignment.  In other words, the representation for @samp{i += 3} looks
+@en just like that for @samp{i = i + 3}.
+这些节点不仅用来表示使用@samp{=}进行赋值，也用来表示复合赋值（像@samp{+=}），并将其转换成@samp{=}赋值。换句话说，对@samp{i += 3}的表示，看起来就像是对@samp{i = i + 3}的表示。
+
+@item INIT_EXPR
+@en These nodes are just like @code{MODIFY_EXPR}, but are used only when a
+@en variable is initialized, rather than assigned to subsequently.  This
+@en means that we can assume that the target of the initialization is not
+@en used in computing its own value; any reference to the lhs in computing
+@en the rhs is undefined.
+这些节点就像@code{MODIFY_EXPR}一样，只不过用于一个变量被初始化的时候，而不是后续的赋值。这意味着，我们可以假设初始化的目标，没有在右手边被用于计算它自己的值；任何在右手边的计算中，对左手边的引用，其行为将是未定义。
+
+@item COMPOUND_EXPR
+@en These nodes represent comma-expressions.  The first operand is an
+@en expression whose value is computed and thrown away prior to the
+@en evaluation of the second operand.  The value of the entire expression is
+@en the value of the second operand.
+这些节点表示逗号表达式。第一个操作数为表达式，其值被计算，并在求出第二个操作数的值之前丢掉。整个表达式的值为第二个操作数的值。
+
+@item COND_EXPR
+@en These nodes represent @code{?:} expressions.  The first operand
+@en is of boolean or integral type.  If it evaluates to a nonzero value,
+@en the second operand should be evaluated, and returned as the value of the
+@en expression.  Otherwise, the third operand is evaluated, and returned as
+@en the value of the expression.
+这些节点表示@code{?:}表达式。第一个操作数是布尔或者整数类型。如果其求解为非零值，则第二个操作数将被求值，并返回表达式的值。否则，第三个操作数将被求值，并将表达式的值返回。
+
+@en The second operand must have the same type as the entire expression,
+@en unless it unconditionally throws an exception or calls a noreturn
+@en function, in which case it should have void type.  The same constraints
+@en apply to the third operand.  This allows array bounds checks to be
+@en represented conveniently as @code{(i >= 0 && i < 10) ? i : abort()}.
+第二个操作数必须与整个表达式具有相同的类型，除非它是要无条件的抛出一个异常或者调用一个不返回的函数，这种情况下，其将是void类型。第三个操作数也具有同样的约束。这使得数组的边界检查可以被方便的表示为@code{(i >= 0 && i < 10) ? i : abort()}。
+
+@en As a GNU extension, the C language front-ends allow the second
+@en operand of the @code{?:} operator may be omitted in the source.
+@en For example, @code{x ? : 3} is equivalent to @code{x ? x : 3},
+@en assuming that @code{x} is an expression without side-effects.
+@en In the tree representation, however, the second operand is always
+@en present, possibly protected by @code{SAVE_EXPR} if the first
+@en argument does cause side-effects.
+作为GNU扩展，C语言前端允许@code{?:}运算符的第二个操作数可以在源程序中省略掉。例如，@code{x ? : 3}等价于@code{x ? x : 3}，假设@code{x}是一个没有副作用的表达式。但是，在tree的表示中，第二个操作数总是存在的，并且，如果第一个参数确实产生副作用的话，则其可能通过@code{SAVE_EXPR}来保护。
+
+@item CALL_EXPR
+@en These nodes are used to represent calls to functions, including
+@en non-static member functions.  @code{CALL_EXPR}s are implemented as
+@en expression nodes with a variable number of operands.  Rather than using
+@en @code{TREE_OPERAND} to extract them, it is preferable to use the
+@en specialized accessor macros and functions that operate specifically on
+@en @code{CALL_EXPR} nodes.
+这些节点用来表示对函数的调用，包括non-static成员函数。@code{CALL_EXPR}被实现为一个具有可变数目操作数的表达式节点。不要用@code{TREE_OPERAND}来获取这些操作数，最好是用针对@code{CALL_EXPR}节点的特定的访问宏和函数。
+
+@en @code{CALL_EXPR_FN} returns a pointer to the
+@en function to call; it is always an expression whose type is a
+@en @code{POINTER_TYPE}.
+@code{CALL_EXPR_FN}返回一个调用函数的指针；其总是一个类型为@code{POINTER_TYPE}的表达式。
+
+@en The number of arguments to the call is returned by @code{call_expr_nargs},
+@en while the arguments themselves can be accessed with the @code{CALL_EXPR_ARG} 
+@en macro.  The arguments are zero-indexed and numbered left-to-right.  
+@en You can iterate over the arguments using @code{FOR_EACH_CALL_EXPR_ARG}, as in:
+调用函数的参数数目由@code{call_expr_nargs}来返回，而参数本身可以使用@code{CALL_EXPR_ARG}宏来访问。参数从零开始，从左向右进行索引。你可以使用@code{FOR_EACH_CALL_EXPR_ARG}来迭代参数，例如：
+
+@smallexample
+tree call, arg;
+call_expr_arg_iterator iter;
+FOR_EACH_CALL_EXPR_ARG (arg, iter, call)
+  /* arg is bound to successive arguments of call.  */
+  @dots{};
+@end smallexample
+
+@en For non-static
+@en member functions, there will be an operand corresponding to the
+@en @code{this} pointer.  There will always be expressions corresponding to
+@en all of the arguments, even if the function is declared with default
+@en arguments and some arguments are not explicitly provided at the call
+@en sites.
+对于non-static成员函数，将会有一个对应于@code{this}指针的操作数。所有的参数都会有相应的表达式，即使函数使用缺省的参数声明，并且在调用的地方，一些参数没有被显式的提供。
+
+@en @code{CALL_EXPR}s also have a @code{CALL_EXPR_STATIC_CHAIN} operand that
+@en is used to implement nested functions.  This operand is otherwise null.
+@code{CALL_EXPR}还有一个@code{CALL_EXPR_STATIC_CHAIN}操作数，用于实现嵌套函数。如果没有嵌套函数，则为null。
+
+@item CLEANUP_POINT_EXPR
+@en These nodes represent full-expressions.  The single operand is an
+@en expression to evaluate.  Any destructor calls engendered by the creation
+@en of temporaries during the evaluation of that expression should be
+@en performed immediately after the expression is evaluated.
+这些节点表示full-expression。单个操作数为被求值的表达式。任何在表达式求值中通过创建临时对象所引起的析构调用，都应该在表达式求值之后立刻执行。
+
+@item CONSTRUCTOR
+@en These nodes represent the brace-enclosed initializers for a structure or
+@en array.  The first operand is reserved for use by the back end.  The
+@en second operand is a @code{TREE_LIST}.  If the @code{TREE_TYPE} of the
+@en @code{CONSTRUCTOR} is a @code{RECORD_TYPE} or @code{UNION_TYPE}, then
+@en the @code{TREE_PURPOSE} of each node in the @code{TREE_LIST} will be a
+@en @code{FIELD_DECL} and the @code{TREE_VALUE} of each node will be the
+@en expression used to initialize that field.
+这些节点表示大括号括起的，对结构体或者数组的初始化。第一个操作数被保留，用于后端。第二个操作数为@code{TREE_LIST}。如果@code{CONSTRUCTOR}的@code{TREE_TYPE}为一个@code{RECORD_TYPE}或者@code{UNION_TYPE}，则@code{TREE_LIST}中每个节点的@code{TREE_PURPOSE}将为一个@code{FIELD_DECL}，并且每个节点的@code{TREE_VALUE}将为初始化该域的表达式。
+
+@en If the @code{TREE_TYPE} of the @code{CONSTRUCTOR} is an
+@en @code{ARRAY_TYPE}, then the @code{TREE_PURPOSE} of each element in the
+@en @code{TREE_LIST} will be an @code{INTEGER_CST} or a @code{RANGE_EXPR} of
+@en two @code{INTEGER_CST}s.  A single @code{INTEGER_CST} indicates which
+@en element of the array (indexed from zero) is being assigned to.  A
+@en @code{RANGE_EXPR} indicates an inclusive range of elements to
+@en initialize.  In both cases the @code{TREE_VALUE} is the corresponding
+@en initializer.  It is re-evaluated for each element of a
+@en @code{RANGE_EXPR}.  If the @code{TREE_PURPOSE} is @code{NULL_TREE}, then
+@en the initializer is for the next available array element.
+如果@code{CONSTRUCTOR}的@code{TREE_TYPE}为一个@code{ARRAY_TYPE}，则@code{TREE_LIST}中每个节点的@code{TREE_PURPOSE}将为一个@code{INTEGER_CST}，或者两个@code{INTEGER_CST}的@code{RANGE_EXPR}。单个@code{INTEGER_CST}指出了数组（从0开始索引）的哪个元素将被赋值。@code{RANGE_EXPR}指出了包含端点元素的一个范围将被初始化。这两种情况下，@code{TREE_VALUE}都对应初始化者。其值将对于@code{RANGE_EXPR}的每个元素都重新计算一次。如果@code{TREE_PURPOSE}是@code{NULL_TREE}，则初始化是针对下一个可用的数组元素。
+
+@en In the front end, you should not depend on the fields appearing in any
+@en particular order.  However, in the middle end, fields must appear in
+@en declaration order.  You should not assume that all fields will be
+@en represented.  Unrepresented fields will be set to zero.
+在前端，你不要认为域是按照特定的顺序出现。但是，在中端，域必须按照声明的顺序出现。你不应该假设所有的域都被表示了。没有表示的域将被设置为0。
+
+@item COMPOUND_LITERAL_EXPR
+@findex COMPOUND_LITERAL_EXPR_DECL_EXPR
+@findex COMPOUND_LITERAL_EXPR_DECL
+@en These nodes represent ISO C99 compound literals.  The
+@en @code{COMPOUND_LITERAL_EXPR_DECL_EXPR} is a @code{DECL_EXPR}
+@en containing an anonymous @code{VAR_DECL} for
+@en the unnamed object represented by the compound literal; the
+@en @code{DECL_INITIAL} of that @code{VAR_DECL} is a @code{CONSTRUCTOR}
+@en representing the brace-enclosed list of initializers in the compound
+@en literal.  That anonymous @code{VAR_DECL} can also be accessed directly
+@en by the @code{COMPOUND_LITERAL_EXPR_DECL} macro.
+这些节点表示复合文字。@code{COMPOUND_LITERAL_EXPR_DECL_STMT}为一个@code{DECL_STMT}，包含了一个由复合文字表示的未命名对象的匿名@code{VAR_DECL}；@code{VAR_DECL}的@code{DECL_INITIAL}是一个@code{CONSTRUCTOR}用来表示在复合文字中大括号包围的初始值列表。匿名的@code{VAR_DECL}还可以通过@code{COMPOUND_LITERAL_EXPR_DECL}宏直接访问。
+
+@item SAVE_EXPR
+@en A @code{SAVE_EXPR} represents an expression (possibly involving
+@en side-effects) that is used more than once.  The side-effects should
+@en occur only the first time the expression is evaluated.  Subsequent uses
+@en should just reuse the computed value.  The first operand to the
+@en @code{SAVE_EXPR} is the expression to evaluate.  The side-effects should
+@en be executed where the @code{SAVE_EXPR} is first encountered in a
+@en depth-first preorder traversal of the expression tree.
+@code{SAVE_EXPR}表示一个被多次使用的表达式（可能会有副作用）。副作用应该只在表达式第一次被求值时发生。后续的使用应该只是重用计算所得的值。@code{SAVE_EXPR}的第一个操作数是要求值的表达式。副作用应该在深度优先前续遍历表达式树，第一次遇到@code{SAVE_EXPR}时被执行。 
+
+@item TARGET_EXPR
+@en A @code{TARGET_EXPR} represents a temporary object.  The first operand
+@en is a @code{VAR_DECL} for the temporary variable.  The second operand is
+@en the initializer for the temporary.  The initializer is evaluated and,
+@en if non-void, copied (bitwise) into the temporary.  If the initializer
+@en is void, that means that it will perform the initialization itself.
+@code{TARGET_EXPR}表示一个临时对象。第一个操作数是临时变量@code{VAR_DECL}。第二个操作数是临时变量的初始值。初始值将被求值，并且如果不是void型的，则（按位）复制到临时变量中。如果初始值是void的，意味着将会自己执行初始化。
+
+@en Often, a @code{TARGET_EXPR} occurs on the right-hand side of an
+@en assignment, or as the second operand to a comma-expression which is
+@en itself the right-hand side of an assignment, etc.  In this case, we say
+@en that the @code{TARGET_EXPR} is ``normal''; otherwise, we say it is
+@en ``orphaned''.  For a normal @code{TARGET_EXPR} the temporary variable
+@en should be treated as an alias for the left-hand side of the assignment,
+@en rather than as a new temporary variable.
+很多时候，@code{TARGET_EXPR}会出现在赋值的右边，或者作为逗号表达式的第二个操作数。 这种情况下，我们说@code{TARGET_EXPR}是“normal”的；否则，我们说它是“orphaned”。对于一个正常的@code{TARGET_EXPR}，临时变量应被视为赋值的左端的一个别名，而不是一个新的临时变量。
+
+@en The third operand to the @code{TARGET_EXPR}, if present, is a
+@en cleanup-expression (i.e., destructor call) for the temporary.  If this
+@en expression is orphaned, then this expression must be executed when the
+@en statement containing this expression is complete.  These cleanups must
+@en always be executed in the order opposite to that in which they were
+@en encountered.  Note that if a temporary is created on one branch of a
+@en conditional operator (i.e., in the second or third operand to a
+@en @code{COND_EXPR}), the cleanup must be run only if that branch is
+@en actually executed.
+@code{TARGET_EXPR}的第三个操作数，如果存在的话，是临时变量的清理表达式（即析构调用）。如果该表达式是孤儿的，则该表达式必须当包含它的语句是完整的时候被执行。这些清理必须总是按照相反的顺序执行。注意如果临时变量是在条件操作符的分支上创建的（即，@code{COND_EXPR}的第二个或第三个操作数），则清理必须只有在该分支实际被执行时才运行。
+
+@item VA_ARG_EXPR
+@en This node is used to implement support for the C/C++ variable argument-list
+@en mechanism.  It represents expressions like @code{va_arg (ap, type)}.
+@en Its @code{TREE_TYPE} yields the tree representation for @code{type} and
+@en its sole argument yields the representation for @code{ap}.
+该节点用来实现对C/C++可变参数列表机制的支持。它表示了像@code{va_arg (ap, type)}这样的表达式。它的@code{TREE_TYPE}用来产生@code{type}的树表示，唯一的参数用来产生对@code{ap}的表示。
+@end table
+
+@en @node Vectors
+@en @subsection Vectors
+@node Vectors
+@subsection 向量
+@tindex VEC_LSHIFT_EXPR
+@tindex VEC_RSHIFT_EXPR
+@tindex VEC_WIDEN_MULT_HI_EXPR
+@tindex VEC_WIDEN_MULT_LO_EXPR
+@tindex VEC_UNPACK_HI_EXPR
+@tindex VEC_UNPACK_LO_EXPR
+@tindex VEC_UNPACK_FLOAT_HI_EXPR
+@tindex VEC_UNPACK_FLOAT_LO_EXPR
+@tindex VEC_PACK_TRUNC_EXPR
+@tindex VEC_PACK_SAT_EXPR
+@tindex VEC_PACK_FIX_TRUNC_EXPR
+@tindex VEC_EXTRACT_EVEN_EXPR 
+@tindex VEC_EXTRACT_ODD_EXPR
+@tindex VEC_INTERLEAVE_HIGH_EXPR
+@tindex VEC_INTERLEAVE_LOW_EXPR
+
+@table @code
+@item VEC_LSHIFT_EXPR
+@itemx VEC_RSHIFT_EXPR
+@en These nodes represent whole vector left and right shifts, respectively.  
+@en The first operand is the vector to shift; it will always be of vector type.  
+@en The second operand is an expression for the number of bits by which to
+@en shift.  Note that the result is undefined if the second operand is larger
+@en than or equal to the first operand's type size.
+这些节点相应的表示整个向量的左移和右移。第一个操作数为要移动的向量；其将总是为向量类型。第二个操作数是一个表达式，表示要移动的位数。注意如果第二个操作数大于或等于第一个操作数的类型大小，则结果未定义。
+
+@item VEC_WIDEN_MULT_HI_EXPR
+@itemx VEC_WIDEN_MULT_LO_EXPR
+@en These nodes represent widening vector multiplication of the high and low
+@en parts of the two input vectors, respectively.  Their operands are vectors 
+@en that contain the same number of elements (@code{N}) of the same integral type.  
+@en The result is a vector that contains half as many elements, of an integral type 
+@en whose size is twice as wide.  In the case of @code{VEC_WIDEN_MULT_HI_EXPR} the
+@en high @code{N/2} elements of the two vector are multiplied to produce the
+@en vector of @code{N/2} products. In the case of @code{VEC_WIDEN_MULT_LO_EXPR} the
+@en low @code{N/2} elements of the two vector are multiplied to produce the
+@en vector of @code{N/2} products.
+这些节点分别表示两个输入向量的高部和低部的加宽向量乘法。它们的操作数为包含同一整数类型的同一数目（@code{N}）元素的向量。结果为一个包含整数类型的元素大小为两倍宽数目为一半的向量。对于@code{VEC_WIDEN_MULT_HI_EXPR}，两个向量的高@code{N/2}个元素相乘得到@code{N/2}个积的向量。对于@code{VEC_WIDEN_MULT_LO_EXPR}，两个向量的低@code{N/2}个元素相乘得到@code{N/2}个积的向量。
+
+@item VEC_UNPACK_HI_EXPR
+@itemx VEC_UNPACK_LO_EXPR
+@en These nodes represent unpacking of the high and low parts of the input vector,
+@en respectively.  The single operand is a vector that contains @code{N} elements 
+@en of the same integral or floating point type.  The result is a vector
+@en that contains half as many elements, of an integral or floating point type
+@en whose size is twice as wide.  In the case of @code{VEC_UNPACK_HI_EXPR} the
+@en high @code{N/2} elements of the vector are extracted and widened (promoted).
+@en In the case of @code{VEC_UNPACK_LO_EXPR} the low @code{N/2} elements of the
+@en vector are extracted and widened (promoted).
+这些节点分别表示拆分输入向量的高部和低部。单操作数为一个包含同一整数或浮点类型的@code{N}个元素的向量。
+结果为包含整数或者浮点类型的元素大小为两倍宽数目为一半的向量。对于@code{VEC_UNPACK_HI_EXPR}，向量的高@code{N/2}个元素被提取并扩展（提升）。对于@code{VEC_UNPACK_LO_EXPR}，向量的低@code{N/2}个元素被提取并扩展（提升）。
+
+@item VEC_UNPACK_FLOAT_HI_EXPR
+@itemx VEC_UNPACK_FLOAT_LO_EXPR
+@en These nodes represent unpacking of the high and low parts of the input vector,
+@en where the values are converted from fixed point to floating point.  The
+@en single operand is a vector that contains @code{N} elements of the same
+@en integral type.  The result is a vector that contains half as many elements
+@en of a floating point type whose size is twice as wide.  In the case of
+@en @code{VEC_UNPACK_HI_EXPR} the high @code{N/2} elements of the vector are
+@en extracted, converted and widened.  In the case of @code{VEC_UNPACK_LO_EXPR}
+@en the low @code{N/2} elements of the vector are extracted, converted and widened.
+单操作数为包含同一整数类型的@code{N}个元素的向量。结果为包含浮点类型的元素大小为两倍宽数目为一半的向量。对于@code{VEC_UNPACK_HI_EXPR}，向量的高@code{N/2}个元素被提取，转换并扩展。对于@code{VEC_UNPACK_LO_EXPR}，向量的低@code{N/2}个元素被提取，转换并扩展。
+
+@item VEC_PACK_TRUNC_EXPR
+@en This node represents packing of truncated elements of the two input vectors
+@en into the output vector.  Input operands are vectors that contain the same
+@en number of elements of the same integral or floating point type.  The result
+@en is a vector that contains twice as many elements of an integral or floating
+@en point type whose size is half as wide. The elements of the two vectors are
+@en demoted and merged (concatenated) to form the output vector.
+该节点表示将两个输入向量的截断元素打包成输出向量。输入操作数是包含同一整数或者浮点类型的相同数目元素的向量。结果为包含整数或者浮点类型的元素大小为一半数目为两倍的向量。两个向量的元素合并成输出向量。
+
+@item VEC_PACK_SAT_EXPR
+@en This node represents packing of elements of the two input vectors into the
+@en output vector using saturation.  Input operands are vectors that contain
+@en the same number of elements of the same integral type.  The result is a
+@en vector that contains twice as many elements of an integral type whose size
+@en is half as wide.  The elements of the two vectors are demoted and merged
+@en (concatenated) to form the output vector.
+该节点表示使用饱和方式（saturation）将两个输入向量的元素打包成输出向量。输入操作数是包含了同一整数类型的相同数目元素的向量。结果为一个包含整数类型的元素大小为一半数目为两倍的向量。两个向量的元素合并成输出向量。 
+
+@item VEC_PACK_FIX_TRUNC_EXPR
+@en This node represents packing of elements of the two input vectors into the
+@en output vector, where the values are converted from floating point
+@en to fixed point.  Input operands are vectors that contain the same number
+@en of elements of a floating point type.  The result is a vector that contains
+@en twice as many elements of an integral type whose size is half as wide.  The
+@en elements of the two vectors are merged (concatenated) to form the output
+@en vector.
+该节点表示将将两个输入向量的元素打包成输出向量，并将值由浮点转换为定点。输入操作数是包含浮点类型的相同数目元素的向量。结果为包含整数类型元素大小一半数目为两倍的向量。两个向量的元素合并成输出向量。
+
+@item VEC_EXTRACT_EVEN_EXPR
+@itemx VEC_EXTRACT_ODD_EXPR
+@en These nodes represent extracting of the even/odd elements of the two input 
+@en vectors, respectively. Their operands and result are vectors that contain the 
+@en same number of elements of the same type.
+这些节点分别表示提取两个输入向量的偶数/奇数个元素。它们的操作数和结果为包含同一类型的相同数目元素的向量。
+
+@item VEC_INTERLEAVE_HIGH_EXPR
+@itemx VEC_INTERLEAVE_LOW_EXPR
+@en These nodes represent merging and interleaving of the high/low elements of the
+@en two input vectors, respectively. The operands and the result are vectors that 
+@en contain the same number of elements (@code{N}) of the same type.
+@en In the case of @code{VEC_INTERLEAVE_HIGH_EXPR}, the high @code{N/2} elements of 
+@en the first input vector are interleaved with the high @code{N/2} elements of the
+@en second input vector. In the case of @code{VEC_INTERLEAVE_LOW_EXPR}, the low
+@en @code{N/2} elements of the first input vector are interleaved with the low 
+@en @code{N/2} elements of the second input vector.
+这些节点分别表示交错合并两个输入向量的高/低元素。操作数和结果为包含同一类型的相同数目（@code{N}）元素的向量。对于@code{VEC_INTERLEAVE_HIGH_EXPR}，第一个输入向量的高@code{N/2}个元素被第二个输入向量的高@code{N/2}个元素替换。对于@code{VEC_INTERLEAVE_LOW_EXPR}，第一个输入向量的低@code{N/2}个元素被第二个输入向量的低@code{N/2}个元素替换。 
+@end table
+
+
+@c ---------------------------------------------------------------------
+@c Statements
+@c ---------------------------------------------------------------------
+
+@en @node Statements
+@en @section Statements
+@node Statements
+@section 语句
+@cindex Statements
+
+@en Most statements in GIMPLE are assignment statements, represented by
+@en @code{GIMPLE_ASSIGN}.  No other C expressions can appear at statement level;
+@en a reference to a volatile object is converted into a
+@en @code{GIMPLE_ASSIGN}.
+大多数GIMPLE语句为赋值语句，由@code{GIMPLE_ASSIGN}来表示。没有其它C表达式可以出现在语句级别；对一个volatile对象的引用被转换成一个@code{GIMPLE_ASSIGN}。
+
+@en There are also several varieties of complex statements.
+还有几个复杂语句的变体。
+
+@en @menu
+@en * Basic Statements::
+@en * Blocks::
+@en * Statement Sequences::
+@en * Empty Statements::
+@en * Jumps::
+@en * Cleanups::
+@en * OpenMP::
+@en @end menu
+@menu
+* Basic Statements::
+* Blocks::
+* Statement Sequences::
+* Empty Statements::
+* Jumps::
+* Cleanups::
+* OpenMP::
+@end menu
+
+@en @node Basic Statements
+@en @subsection Basic Statements
+@node Basic Statements
+@subsection 基本语句
+@cindex Basic Statements
+
+@table @code
+@item ASM_EXPR
+
+@en Used to represent an inline assembly statement.  For an inline assembly
+@en statement like:
+用来表示一条内联的汇编语句。一条内联汇编语句形如： 
+@smallexample
+asm ("mov x, y");
+@end smallexample
+@en The @code{ASM_STRING} macro will return a @code{STRING_CST} node for
+@en @code{"mov x, y"}.  If the original statement made use of the
+@en extended-assembly syntax, then @code{ASM_OUTPUTS},
+@en @code{ASM_INPUTS}, and @code{ASM_CLOBBERS} will be the outputs, inputs,
+@en and clobbers for the statement, represented as @code{STRING_CST} nodes.
+@en The extended-assembly syntax looks like:
+@code{ASM_STRING}宏将会为@code{"mov x, y"}返回一个@code{STRING_CST}节点。如果原始的语句使用了扩展汇编语法，则@code{ASM_OUTPUTS}，@code{ASM_INPUTS}和@code{ASM_CLOBBERS}为用@code{STRING_CST}表示的语句的输出，输入和clobber。扩展汇编语法形如：
+@smallexample
+asm ("fsinx %1,%0" : "=f" (result) : "f" (angle));
+@end smallexample
+@en The first string is the @code{ASM_STRING}, containing the instruction
+@en template.  The next two strings are the output and inputs, respectively;
+@en this statement has no clobbers.  As this example indicates, ``plain''
+@en assembly statements are merely a special case of extended assembly
+@en statements; they have no cv-qualifiers, outputs, inputs, or clobbers.
+@en All of the strings will be @code{NUL}-terminated, and will contain no
+@en embedded @code{NUL}-characters.
+第一个字符串是@code{ASM_STRING}，包含指令模板。接下来的两个字符串分别是输出和输入。该语句没有clobbers。这个例子表明，普通的汇编语句只是扩展汇编语句的一个特例；它们没有限定符，输出，输入或者clobbers。所有的字符串都为@code{NUL}结尾，并且不包含嵌入的@code{NUL}字符。
+
+@en If the assembly statement is declared @code{volatile}, or if the
+@en statement was not an extended assembly statement, and is therefore
+@en implicitly volatile, then the predicate @code{ASM_VOLATILE_P} will hold
+@en of the @code{ASM_EXPR}.
+如果汇编语句被声明为@code{volatile}，或者语句不是扩展汇编语句，因此是一个隐式的@code{volatile}，则断言@code{ASM_VOLATILE_P}将会保存@code{ASM_EXPR}。
+
+@item DECL_EXPR
+
+@en Used to represent a local declaration.  The @code{DECL_EXPR_DECL} macro
+@en can be used to obtain the entity declared.  This declaration may be a
+@en @code{LABEL_DECL}, indicating that the label declared is a local label.
+@en (As an extension, GCC allows the declaration of labels with scope.)  In
+@en C, this declaration may be a @code{FUNCTION_DECL}, indicating the
+@en use of the GCC nested function extension.  For more information,
+@en @pxref{Functions}.
+用来表示一个局部声明。宏@code{DECL_STMT_DECL}可以用来获得整个声明。
+该声明可以为一个@code{LABEL_DECL}，表示声明了一个局部标号。
+（作为扩展，GCC允许声明具有作用域的标号。）
+在C中，该声明可以为一个@code{FUNCTION_DECL}，表示使用GCC嵌套函数扩展。
+更多信息，@pxref{Functions}。
+
+@item LABEL_EXPR
+
+@en Used to represent a label.  The @code{LABEL_DECL} declared by this
+@en statement can be obtained with the @code{LABEL_EXPR_LABEL} macro.  The
+@en @code{IDENTIFIER_NODE} giving the name of the label can be obtained from
+@en the @code{LABEL_DECL} with @code{DECL_NAME}.
+用来表示一个标号。可以通过@code{LABEL_EXPR_LABEL}宏获得该语句声明的@code{LABEL_DECL}。可以通过@code{LABEL_DECL}的@code{DECL_NAME}获得@code{IDENTIFIER_NODE}给出的标号名字。
+
+@item GOTO_EXPR
+
+@en Used to represent a @code{goto} statement.  The @code{GOTO_DESTINATION} will
+@en usually be a @code{LABEL_DECL}.  However, if the ``computed goto'' extension
+@en has been used, the @code{GOTO_DESTINATION} will be an arbitrary expression
+@en indicating the destination.  This expression will always have pointer type.
+用来表示一条@code{goto}语句。
+@code{GOTO_DESTINATION}通常为一个@code{LABEL_DECL}。
+然而，如果使用了扩展的“computed goto”，将为一个随机表达式用来指示目的地。
+该表达式总是具有一个指针类型。 
+
+@item RETURN_EXPR
+
+@en Used to represent a @code{return} statement.  Operand 0 represents the
+@en value to return.  It should either be the @code{RESULT_DECL} for the
+@en containing function, or a @code{MODIFY_EXPR} or @code{INIT_EXPR}
+@en setting the function's @code{RESULT_DECL}.  It will be
+@en @code{NULL_TREE} if the statement was just
+用来表示一条@code{return}语句。@code{RETURN_EXPR}是返回的表达式，
+其将会返回@code{NULL_TREE}，如果语句只是 
+@smallexample
+return;
+@end smallexample
+
+@item LOOP_EXPR
+@en These nodes represent ``infinite'' loops.  The @code{LOOP_EXPR_BODY}
+@en represents the body of the loop.  It should be executed forever, unless
+@en an @code{EXIT_EXPR} is encountered.
+这些节点表示“无限”循环。@code{LOOP_EXPR_BODY}表示循环体。其将被永远执行，除非遇到@code{EXIT_EXPR}。
+
+@item EXIT_EXPR
+@en These nodes represent conditional exits from the nearest enclosing
+@en @code{LOOP_EXPR}.  The single operand is the condition; if it is
+@en nonzero, then the loop should be exited.  An @code{EXIT_EXPR} will only
+@en appear within a @code{LOOP_EXPR}.
+这些节点表示从最近包含的@code{LOOP_EXPR}中条件退出。单个操作数为条件；如果非零，则循环将被退出。@code{EXIT_EXPR}将只是出现在@code{LOOP_EXPR}中。
+
+@item SWITCH_STMT
+
+@en Used to represent a @code{switch} statement.  The @code{SWITCH_STMT_COND}
+@en is the expression on which the switch is occurring.  See the documentation
+@en for an @code{IF_STMT} for more information on the representation used
+@en for the condition.  The @code{SWITCH_STMT_BODY} is the body of the switch
+@en statement.   The @code{SWITCH_STMT_TYPE} is the original type of switch
+@en expression as given in the source, before any compiler conversions.
+用来表示一个@code{switch}语句。@code{SWITCH_STMT_COND}是发生@code{switch}的表达式。更多关于条件表示的信息，参见@code{IF_STMT}文档。@code{SWITCH_STMT_BODY}是@code{switch}语句主体。@code{SWITCH_STMT_TYPE}是源代码中给出的@code{switch}表达式的，在任何编译器转换之前的原始类型。
+
+@item CASE_LABEL_EXPR
+
+@en Use to represent a @code{case} label, range of @code{case} labels, or a
+@en @code{default} label.  If @code{CASE_LOW} is @code{NULL_TREE}, then this is a
+@en @code{default} label.  Otherwise, if @code{CASE_HIGH} is @code{NULL_TREE}, then
+@en this is an ordinary @code{case} label.  In this case, @code{CASE_LOW} is
+@en an expression giving the value of the label.  Both @code{CASE_LOW} and
+@en @code{CASE_HIGH} are @code{INTEGER_CST} nodes.  These values will have
+@en the same type as the condition expression in the switch statement.
+用来表示一个@code{case}标号，@code{case}标号的范围或者一个@code{default}标号。如果@code{CASE_LOW}是@code{NULL_TREE}，则为一个@code{default}标号。否则，如果@code{CASE_HIGH}是@code{NULL_TREE}，则为一个普通的@code{case}标号。这种情况下，@code{CASE_LOW}是一个表达式，给出了标号的值。@code{CASE_LOW}和@code{CASE_HIGH}都是@code{INTEGER_CST}节点。这些值跟在@code{switch}语句中的条件表达式具有相同的类型。 
+
+@en Otherwise, if both @code{CASE_LOW} and @code{CASE_HIGH} are defined, the
+@en statement is a range of case labels.  Such statements originate with the
+@en extension that allows users to write things of the form:
+否则，如果同时定义了@code{CASE_LOW}和@code{CASE_HIGH}，则语句为一个@code{case}标号的范围。这样的语句源于允许用户使用如下形式的扩展：
+@smallexample
+case 2 ... 5:
+@end smallexample
+@en The first value will be @code{CASE_LOW}, while the second will be
+@en @code{CASE_HIGH}.
+第一个值为@code{CASE_LOW}，第二个为@code{CASE_HIGH}。
+
+@end table
+
+
+@en @node Blocks
+@en @subsection Blocks
+@node Blocks
+@subsection 块
+@cindex Blocks
+
+@en Block scopes and the variables they declare in GENERIC are
+@en expressed using the @code{BIND_EXPR} code, which in previous
+@en versions of GCC was primarily used for the C statement-expression
+@en extension.
+块作用域和它们声明的变量，在GENERIC中使用@code{BIND_EXPR}代码来表示。这在之前的GCC版本中被主要表示为C语句表达式扩展。
+
+@en Variables in a block are collected into @code{BIND_EXPR_VARS} in
+@en declaration order through their @code{TREE_CHAIN} field.  Any runtime
+@en initialization is moved out of @code{DECL_INITIAL} and into a
+@en statement in the controlled block.  When gimplifying from C or C++,
+@en this initialization replaces the @code{DECL_STMT}.  These variables
+@en will never require cleanups.  The scope of these variables is just the
+@en body
+块中的变量按照声明的顺序被搜集到@code{BIND_EXPR_VARS}中。任何运行时的初始化被从@code{DECL_INITIAL}中移出，并移送到控制块中的一条语句。当从C或者C++进行gimplifying的时候，该初始化用来替换@code{DECL_STMT}。
+
+@en Variable-length arrays (VLAs) complicate this process, as their
+@en size often refers to variables initialized earlier in the block.
+@en To handle this, we currently split the block at that point, and
+@en move the VLA into a new, inner @code{BIND_EXPR}.  This strategy
+@en may change in the future.
+可变长度的数组（VLA）使得该处理变得复杂，因为它们的大小经常是一个块中早前被初始化的变量。为了进行处理，我们目前将块在那个点进行拆分，将VLA移送到一个新的，内部的@code{BIND_EXPR}。该策略在将来可能会改变。
+
+@en A C++ program will usually contain more @code{BIND_EXPR}s than
+@en there are syntactic blocks in the source code, since several C++
+@en constructs have implicit scopes associated with them.  On the
+@en other hand, although the C++ front end uses pseudo-scopes to
+@en handle cleanups for objects with destructors, these don't
+@en translate into the GIMPLE form; multiple declarations at the same
+@en level use the same @code{BIND_EXPR}.
+C++程序通常包含比源代码中语法块更多的@code{BIND_EXPR}，因为多个C++构造函数具有隐式的与它们相关联的作用域。另一方面，虽然C++前端使用伪作用域来处理析构函数对对象的清除，这些并不被转换成GIMPLE形式；在相同级别上的多个声明使用相同的@code{BIND_EXPR}。
+
+@en @node Statement Sequences
+@en @subsection Statement Sequences
+@node Statement Sequences
+@subsection 语句序列
+@cindex Statement Sequences
+
+@en Multiple statements at the same nesting level are collected into
+@en a @code{STATEMENT_LIST}.  Statement lists are modified and
+@en traversed using the interface in @samp{tree-iterator.h}.
+同一嵌套级别的多个语句被搜集到一个@code{STATEMENT_LIST}中。语句列表使用@samp{tree-iterator.h}中的接口来进行修改和遍历。
+
+@en @node Empty Statements
+@en @subsection Empty Statements
+@node Empty Statements
+@subsection 空语句
+@cindex Empty Statements
+
+@en Whenever possible, statements with no effect are discarded.  But
+@en if they are nested within another construct which cannot be
+@en discarded for some reason, they are instead replaced with an
+@en empty statement, generated by @code{build_empty_stmt}.
+@en Initially, all empty statements were shared, after the pattern of
+@en the Java front end, but this caused a lot of trouble in practice.
+没有作用效果的语句会尽可能的被丢弃。但是如果它们嵌套在另一个结构中，并且出于某种原因该结构不能被丢弃，则使用空语句来替换，通过@code{build_empty_stmt}来生成。起初，所有的空语句是共享的，但是这在实际中产生了许多麻烦。
+
+@en An empty statement is represented as @code{(void)0}.
+空语句被表示为@code{(void)0}。
+
+@en @node Jumps
+@en @subsection Jumps
+@node Jumps
+@subsection 跳转
+@cindex Jumps
+
+@en Other jumps are expressed by either @code{GOTO_EXPR} or
+@code{RETURN_EXPR}.
+其它的跳转由@code{GOTO_EXPR}或者@code{RETURN_EXPR}表示。
+
+@en The operand of a @code{GOTO_EXPR} must be either a label or a
+@en variable containing the address to jump to.
+@code{GOTO_EXPR}的操作数必须为一个标号或者一个包含跳转地址的变量。
+
+@en The operand of a @code{RETURN_EXPR} is either @code{NULL_TREE},
+@en @code{RESULT_DECL}, or a @code{MODIFY_EXPR} which sets the return
+@en value.  It would be nice to move the @code{MODIFY_EXPR} into a
+@en separate statement, but the special return semantics in
+@en @code{expand_return} make that difficult.  It may still happen in
+@en the future, perhaps by moving most of that logic into
+@en @code{expand_assignment}.
+@code{RETURN_EXPR}的操作数为@code{NULL_TREE}，@code{RESULT_DECL}，或者@code{MODIFY_EXPR}，其用来设置返回值。将@code{MODIFY_EXPR}移送到一个单独的语句会好些，不过@code{expand_return}中的特定的return语义使得有些困难。这在将来可能会发生，可能会通过将大部分逻辑移送到@code{expand_assignment}中。
+
+@en @node Cleanups
+@en @subsection Cleanups
+@node Cleanups
+@subsection 清除
+@cindex Cleanups
+
+@en Destructors for local C++ objects and similar dynamic cleanups are
+@en represented in GIMPLE by a @code{TRY_FINALLY_EXPR}.
+@en @code{TRY_FINALLY_EXPR} has two operands, both of which are a sequence
+@en of statements to execute.  The first sequence is executed.  When it
+@en completes the second sequence is executed.
+对于C++局部对象的析构，以及类似的动态清除操作在GIMPLE中通过一个@code{TRY_FINALLY_EXPR}来表示。@code{TRY_FINALLY_EXPR}有两个操作数，均为要执行的语句序列。第一个序列会被执行。当其执行完毕时，第二个序列会被执行。
+
+@en The first sequence may complete in the following ways:
+第一个序列可以按照下列方式来执行完毕：
+
+@enumerate
+@en @item Execute the last statement in the sequence and fall off the
+@en end.
+@item 执行了序列中的最后一条语句，并结束。
+@en @item Execute a goto statement (@code{GOTO_EXPR}) to an ordinary
+@en label outside the sequence.
+@item 执行一个goto语句(@code{GOTO_EXPR})，跳到序列之外的一个普通标号。 t
+@en @item Execute a return statement (@code{RETURN_EXPR}).
+@item 执行一个return语句(@code{RETURN_EXPR})。
+@en @item Throw an exception.  This is currently not explicitly represented in
+@en GIMPLE.
+@item 抛出一个异常。这在当前没有用GIMPLE显式的表示。
+@end enumerate
+
+@en The second sequence is not executed if the first sequence completes by
+@en calling @code{setjmp} or @code{exit} or any other function that does
+@en not return.  The second sequence is also not executed if the first
+@en sequence completes via a non-local goto or a computed goto (in general
+@en the compiler does not know whether such a goto statement exits the
+@en first sequence or not, so we assume that it doesn't).
+如果第一个序列通过调用@code{setjmp}或@code{exit}，或者其它不返回的函数，来执行完毕，则第二个序列不会被执行。如果第一个序列通过一个非局部goto或者一个计算goto（总的来说，编译器不知道这样一个goto语句是否会退出第一个序列，所以我们假设其没有退出）来执行完毕，则第二个序列也不会被执行。
+
+@en After the second sequence is executed, if it completes normally by
+@en falling off the end, execution continues wherever the first sequence
+@en would have continued, by falling off the end, or doing a goto, etc.
+第二个序列被执行完之后，如果其正常的执行到结尾，并结束，则只要第一个序列被继续执行，其也会被继续。
+
+@en @code{TRY_FINALLY_EXPR} complicates the flow graph, since the cleanup
+@en needs to appear on every edge out of the controlled block; this
+@en reduces the freedom to move code across these edges.  Therefore, the
+@en EH lowering pass which runs before most of the optimization passes
+@en eliminates these expressions by explicitly adding the cleanup to each
+@en edge.  Rethrowing the exception is represented using @code{RESX_EXPR}.
+@code{TRY_FINALLY_EXPR}使流图变得复杂，因为清除工作需要在流出控制块的每条边上都出现；这就减少了将代码跨越这些边进行移动的自由。因此，运行于大多数优化过程之前的EH下降过程，通过显式的增加对每个边的清除操作，来消除这些表达式。再次抛出异常使用@code{RESX_EXPR}来表示。
+
+@node OpenMP
+@subsection OpenMP
+@tindex OMP_PARALLEL
+@tindex OMP_FOR
+@tindex OMP_SECTIONS
+@tindex OMP_SINGLE
+@tindex OMP_SECTION
+@tindex OMP_MASTER
+@tindex OMP_ORDERED
+@tindex OMP_CRITICAL
+@tindex OMP_RETURN
+@tindex OMP_CONTINUE
+@tindex OMP_ATOMIC
+@tindex OMP_CLAUSE
+
+@en All the statements starting with @code{OMP_} represent directives and
+@en clauses used by the OpenMP API @w{@uref{http://www.openmp.org/}}.
+所有以@code{OMP_}开头的语句，都表示OpenMP API @w{@uref{http://www.openmp.org/}}所用到的directives和clauses。
+
+@table @code
+@item OMP_PARALLEL
+
+@en Represents @code{#pragma omp parallel [clause1 @dots{} clauseN]}. It
+@en has four operands:
+表示@code{#pragma omp parallel [clause1 @dots{} clauseN]}。具有四个操作数：
+
+@en Operand @code{OMP_PARALLEL_BODY} is valid while in GENERIC and
+@en High GIMPLE forms.  It contains the body of code to be executed
+@en by all the threads.  During GIMPLE lowering, this operand becomes
+@en @code{NULL} and the body is emitted linearly after
+@en @code{OMP_PARALLEL}.
+操作数@code{OMP_PARALLEL_BODY}在GENERIC和High GIMPLE形式中是有效的。
+它包含了被所有线程执行的代码体。在GIMPLE下降过程中，
+这个操作数变为@code{NULL}并且代码体被线性的输出在@code{OMP_PARALLEL}之后。
+
+@en Operand @code{OMP_PARALLEL_CLAUSES} is the list of clauses
+@en associated with the directive.
+操作数@code{OMP_PARALLEL_CLAUSES}为与指令相关的子句列表。
+
+@en Operand @code{OMP_PARALLEL_FN} is created by
+@en @code{pass_lower_omp}, it contains the @code{FUNCTION_DECL}
+@en for the function that will contain the body of the parallel
+@en region.
+操作数@code{OMP_PARALLEL_FN}由@code{pass_lower_omp}创建，
+它包含了将要包含并行区域体的函数@code{FUNCTION_DECL}。
+
+@en Operand @code{OMP_PARALLEL_DATA_ARG} is also created by
+@en @code{pass_lower_omp}. If there are shared variables to be
+@en communicated to the children threads, this operand will contain
+@en the @code{VAR_DECL} that contains all the shared values and
+@en variables.
+操作数@code{OMP_PARALLEL_DATA_ARG}也由@code{pass_lower_omp}创建。
+如果有共享变量用于子线程间通讯，则该操作数将包含@code{VAR_DECL}，
+其包含了所有共享的值和变量。
+
+@item OMP_FOR
+
+@en Represents @code{#pragma omp for [clause1 @dots{} clauseN]}.  It
+@en has 5 operands:
+表示@code{#pragma omp for [clause1 @dots{} clauseN]}. 其具有5个操作数：
+
+@en Operand @code{OMP_FOR_BODY} contains the loop body.
+操作数OMP_FOR_BODY包含了循环体。
+
+@en Operand @code{OMP_FOR_CLAUSES} is the list of clauses
+@en associated with the directive.
+操作数OMP_FOR_CLAUSES为与指令相关的子句列表。
+
+@en Operand @code{OMP_FOR_INIT} is the loop initialization code of
+@en the form @code{VAR = N1}.
+操作数OMP_FOR_INIT为VAR = N1形式的循环初始化代码。
+
+@en Operand @code{OMP_FOR_COND} is the loop conditional expression
+@en of the form @code{VAR @{<,>,<=,>=@} N2}.
+操作数OMP_FOR_COND为@code{VAR @{<,>,<=,>=@} N2}形式的循环条件表达式。
+
+@en Operand @code{OMP_FOR_INCR} is the loop index increment of the
+@en form @code{VAR @{+=,-=@} INCR}.
+操作数OMP_FOR_INCR为@code{VAR @{+=,-=@} INCR}形式的循环索引增量。
+
+@en Operand @code{OMP_FOR_PRE_BODY} contains side-effect code from
+@en operands @code{OMP_FOR_INIT}, @code{OMP_FOR_COND} and
+@en @code{OMP_FOR_INC}.  These side-effects are part of the
+@en @code{OMP_FOR} block but must be evaluated before the start of
+@en loop body.
+操作数OMP_FOR_PRE_BODY包含了来自操作数OMP_FOR_INIT, OMP_FOR_COND和OMP_FOR_INC的副作用代码。这些副作用为OMP_FOR块的一部分，但是必须在开始循环体之前被计算求值。
+
+@en The loop index variable @code{VAR} must be a signed integer variable,
+@en which is implicitly private to each thread.  Bounds
+@en @code{N1} and @code{N2} and the increment expression
+@en @code{INCR} are required to be loop invariant integer
+@en expressions that are evaluated without any synchronization. The
+@en evaluation order, frequency of evaluation and side-effects are
+@en unspecified by the standard.
+循环索引变量VAR必须为单个整数变量，其隐式的归每个线程私有。边界N1和N2，以及增量表达式INCR需要为循环不变量整数表达式，其不需要同步就可以被计算求值。按照标准，计算求值的顺序，频率和副作用都没有被指定。
+
+@item OMP_SECTIONS
+
+@en Represents @code{#pragma omp sections [clause1 @dots{} clauseN]}.
+表示@code{#pragma omp sections [clause1 @dots{} clauseN]}。
+
+@en Operand @code{OMP_SECTIONS_BODY} contains the sections body,
+@en which in turn contains a set of @code{OMP_SECTION} nodes for
+@en each of the concurrent sections delimited by @code{#pragma omp
+@en section}.
+操作数@code{OMP_SECTIONS_BODY}包含了section主体，
+其依次包含了一个@code{OMP_SECTION}节点集合，
+每个并发的section通过@code{#pragma omp section}来划分。
+
+@en Operand @code{OMP_SECTIONS_CLAUSES} is the list of clauses
+@en associated with the directive.
+操作数@code{OMP_SECTIONS_CLAUSES}为与指令相关的子句列表。
+
+@item OMP_SECTION
+
+@en Section delimiter for @code{OMP_SECTIONS}.
+@code{OMP_SECTIONS}的Section定界符。
+
+@item OMP_SINGLE
+
+@en Represents @code{#pragma omp single}.
+表示@code{#pragma omp single}
+
+@en Operand @code{OMP_SINGLE_BODY} contains the body of code to be
+@en executed by a single thread.
+操作数@code{OMP_SINGLE_BODY}包含了被单个线程执行的代码体。
+
+@en Operand @code{OMP_SINGLE_CLAUSES} is the list of clauses
+@en associated with the directive.
+操作数@code{OMP_SINGLE_CLAUSES}为与指令相关的子句列表。
+
+@item OMP_MASTER
+
+@en Represents @code{#pragma omp master}.
+表示@code{#pragma omp master}。
+
+@en Operand @code{OMP_MASTER_BODY} contains the body of code to be
+@en executed by the master thread.
+操作数@code{OMP_MASTER_BODY}包含了被主控线程执行的代码体。
+
+@item OMP_ORDERED
+
+@en Represents @code{#pragma omp ordered}.
+表示@code{#pragma omp ordered}。
+
+@en Operand @code{OMP_ORDERED_BODY} contains the body of code to be
+@en executed in the sequential order dictated by the loop index
+@en variable.
+操作数@code{OMP_ORDERED_BODY}包含了按照由循环索引变量所指示的顺序序列来执行的代码体。
+
+@item OMP_CRITICAL
+
+@en Represents @code{#pragma omp critical [name]}.
+表示@code{#pragma omp critical [name]}。
+
+@en Operand @code{OMP_CRITICAL_BODY} is the critical section.
+操作数@code{OMP_CRITICAL_BODY}为临界section。
+
+@en Operand @code{OMP_CRITICAL_NAME} is an optional identifier to
+@en label the critical section.
+操作数@code{OMP_CRITICAL_NAME}为可选的用来标记临界section的标识符。
+
+@item OMP_RETURN
+
+@en This does not represent any OpenMP directive, it is an artificial
+@en marker to indicate the end of the body of an OpenMP@. It is used
+@en by the flow graph (@code{tree-cfg.c}) and OpenMP region
+@en building code (@code{omp-low.c}).
+这个并不表示任何OpenMP指令，它为一个人为标记用来指示OpenMP主体的结束。
+其被用于流图（@code{tree-cfg.c}）和OpenMP区域构建代码（@code{omp-low.c}）。
+
+@item OMP_CONTINUE
+
+@en Similarly, this instruction does not represent an OpenMP
+@en directive, it is used by @code{OMP_FOR} and
+@en @code{OMP_SECTIONS} to mark the place where the code needs to
+@en loop to the next iteration (in the case of @code{OMP_FOR}) or
+@en the next section (in the case of @code{OMP_SECTIONS}).
+类似的，该指令不表示OpenMP指令，它被@code{OMP_FOR}和@code{OMP_SECTIONS}用于
+标记代码需要循环到下一个迭代（例如@code{OMP_FOR}）或者下一个section
+（例如@code{OMP_SECTIONS}）的地方。有一些情况，
+@code{OMP_CONTINUE}被放在紧挨着@code{OMP_RETURN}之前。
+但是，如果在循环体之后需要出现cleanups，
+则它将被生成在@code{OMP_CONTINUE}和@code{OMP_RETURN}之间。
+
+In some cases, @code{OMP_CONTINUE} is placed right before
+@code{OMP_RETURN}.  But if there are cleanups that need to
+occur right after the looping body, it will be emitted between
+@code{OMP_CONTINUE} and @code{OMP_RETURN}.
+
+@item OMP_ATOMIC
+
+@en Represents @code{#pragma omp atomic}.
+表示@code{#pragma omp atomic}。
+
+@en Operand 0 is the address at which the atomic operation is to be
+@en performed.
+操作数0是要被执行的原子操作的地址。
+
+@en Operand 1 is the expression to evaluate.  The gimplifier tries
+@en three alternative code generation strategies.  Whenever possible,
+@en an atomic update built-in is used.  If that fails, a
+@en compare-and-swap loop is attempted.  If that also fails, a
+@en regular critical section around the expression is used.
+操作数1是要计算求值的表达式。gimplifier会尝试三种可供选择的代码生成策略。
+只要可能，则会使用内建的原子更新。如果失败，
+则会尝试进行比较-交换（compare-and-swap）循环。如果还是失败，
+则会使用表达式附近的一个常规临界section。
+
+@item OMP_CLAUSE
+
+@en Represents clauses associated with one of the @code{OMP_} directives.
+@en Clauses are represented by separate sub-codes defined in
+@en @file{tree.h}.  Clauses codes can be one of:
+@en @code{OMP_CLAUSE_PRIVATE}, @code{OMP_CLAUSE_SHARED},
+@en @code{OMP_CLAUSE_FIRSTPRIVATE},
+@en @code{OMP_CLAUSE_LASTPRIVATE}, @code{OMP_CLAUSE_COPYIN},
+@en @code{OMP_CLAUSE_COPYPRIVATE}, @code{OMP_CLAUSE_IF},
+@en @code{OMP_CLAUSE_NUM_THREADS}, @code{OMP_CLAUSE_SCHEDULE},
+@en @code{OMP_CLAUSE_NOWAIT}, @code{OMP_CLAUSE_ORDERED},
+@en @code{OMP_CLAUSE_DEFAULT}, and @code{OMP_CLAUSE_REDUCTION}.  Each code
+@en represents the corresponding OpenMP clause.
+表示与@code{OMP_}指令相关的子句。子句使用@file{tree.h}中定义的子代码单独表示。
+子句代码可以为：OMP_CLAUSE_PRIVATE, OMP_CLAUSE_SHARED, OMP_CLAUSE_FIRSTPRIVATE, OMP_CLAUSE_LASTPRIVATE, OMP_CLAUSE_COPYIN, OMP_CLAUSE_COPYPRIVATE, OMP_CLAUSE_IF, OMP_CLAUSE_NUM_THREADS, OMP_CLAUSE_SCHEDULE, OMP_CLAUSE_NOWAIT, OMP_CLAUSE_ORDERED, OMP_CLAUSE_DEFAULT, 和OMP_CLAUSE_REDUCTION。每个代码表示了相应的OpenMP子句。
+
+@en Clauses associated with the same directive are chained together
+@en via @code{OMP_CLAUSE_CHAIN}. Those clauses that accept a list
+@en of variables are restricted to exactly one, accessed with
+@en @code{OMP_CLAUSE_VAR}.  Therefore, multiple variables under the
+@en same clause @code{C} need to be represented as multiple @code{C} clauses
+@en chained together.  This facilitates adding new clauses during
+@en compilation.
+与同一指令相关的子句通过@code{OMP_CLAUSE_CHAIN}链接在一起。
+那些接受一个变量列表的子句被限制为只有一个，使用@code{OMP_CLAUSE_VAR}来访问。
+因此，同一子句@code{C}下的多个变量需要被多个链接在一起的@code{C}子句表示。
+这样可以有助于在编译过程中增加新的子句。
+@end table
+
+@c ---------------------------------------------------------------------
+@c Functions
+@c ---------------------------------------------------------------------
+
+@en @node Functions
+@en @section Functions
+@node Functions
+@section 函数
+@cindex function
+@tindex FUNCTION_DECL
+
+@en A function is represented by a @code{FUNCTION_DECL} node.  It stores
+@en the basic pieces of the function such as body, parameters, and return
+@en type as well as information on the surrounding context, visibility,
+@en and linkage.
+函数由@code{FUNCTION_DECL}节点表示。其存储了函数的基本情况，例如函数体，参数和返回类型，以及上下文，可见性和链接性的信息。
+
+@en @menu
+@en * Function Basics::     Function names, body, and parameters.
+@en * Function Properties:: Context, linkage, etc.
+@en @end menu
+@menu
+* Function Basics::     函数名，函数体和参数
+* Function Properties:: 上下文，链接性等等
+@end menu
+
+@c ---------------------------------------------------------------------
+@c Function Basics
+@c ---------------------------------------------------------------------
+
+@en @node Function Basics
+@en @subsection Function Basics
+@node Function Basics
+@subsection 函数基础
+@findex DECL_NAME
+@findex DECL_ASSEMBLER_NAME
+@findex TREE_PUBLIC
+@findex DECL_ARTIFICIAL
+@findex DECL_FUNCTION_SPECIFIC_TARGET
+@findex DECL_FUNCTION_SPECIFIC_OPTIMIZATION
+
+@en A function has four core parts: the name, the parameters, the result,
+@en and the body.  The following macros and functions access these parts
+@en of a @code{FUNCTION_DECL} as well as other basic features:
+函数具有四个核心部分：名字，参数，结果和函数体。下列宏和函数用来访问一个@code{FUNCTION_DECL}的这些部分，以及其它基本特性：
+@ftable @code
+@item DECL_NAME
+@en This macro returns the unqualified name of the function, as an
+@en @code{IDENTIFIER_NODE}.  For an instantiation of a function template,
+@en the @code{DECL_NAME} is the unqualified name of the template, not
+@en something like @code{f<int>}.  The value of @code{DECL_NAME} is
+@en undefined when used on a constructor, destructor, overloaded operator,
+@en or type-conversion operator, or any function that is implicitly
+@en generated by the compiler.  See below for macros that can be used to
+@en distinguish these cases.
+该宏返回函数未限定的名字，为一个@code{IDENTIFIER_NODE}。
+对于一个函数模版的实例，@code{DECL_NAME}为模版的未限定名字，
+而不是类似@code{f<int>}的东西。当用在编译器隐式生成的构造函数，
+析构函数，重载操作符，或者类型转换符，或者任何函数时，
+@code{DECL_NAME}的值未定义。关于可以用来区分这些情况的宏，参见下面。 
+
+@item DECL_ASSEMBLER_NAME
+@en This macro returns the mangled name of the function, also an
+@en @code{IDENTIFIER_NODE}.  This name does not contain leading underscores
+@en on systems that prefix all identifiers with underscores.  The mangled
+@en name is computed in the same way on all platforms; if special processing
+@en is required to deal with the object file format used on a particular
+@en platform, it is the responsibility of the back end to perform those
+@en modifications.  (Of course, the back end should not modify
+@en @code{DECL_ASSEMBLER_NAME} itself.)
+该宏返回函数的mangled名字，也是一个@code{IDENTIFIER_NODE}。该名字没有包含前导的下划线。mangled名字在所有平台上按照相同的方式来计算；如果在特定的平台上，需要对目标文件格式进行特殊的处理，则后端需要负责执行那些修改。（当然，后端不应该修改@code{DECL_ASSEMBLER_NAME}）
+ 
+@en Using @code{DECL_ASSEMBLER_NAME} will cause additional memory to be
+@en allocated (for the mangled name of the entity) so it should be used
+@en only when emitting assembly code.  It should not be used within the
+@en optimizers to determine whether or not two declarations are the same,
+@en even though some of the existing optimizers do use it in that way.
+@en These uses will be removed over time.
+使用@code{DECL_ASSEMBLER_NAME}将使得额外的内存被分配（用于实体的mangled名字），所以其应该只当生成汇编代码时被使用。其不应该在优化器中被使用，用于确定两个声明是否相同，即使一些现有的优化器确实采用了这种方式。这些使用将随着时间被移除。
+
+@item DECL_ARGUMENTS
+@en This macro returns the @code{PARM_DECL} for the first argument to the
+@en function.  Subsequent @code{PARM_DECL} nodes can be obtained by
+@en following the @code{TREE_CHAIN} links.
+该宏返回函数第一个参数的@code{PARM_DECL}。后续的@code{PARM_DECL}节点可以通过@code{TREE_CHAIN}来获得。
+
+@item DECL_RESULT
+@en This macro returns the @code{RESULT_DECL} for the function.
+该函数返回函数的@code{RESULT_DECL}。
+
+@item DECL_SAVED_TREE
+@en This macro returns the complete body of the function.
+该宏返回整个函数体。
+
+@item TREE_TYPE
+@en This macro returns the @code{FUNCTION_TYPE} or @code{METHOD_TYPE} for
+@en the function.
+该宏返回函数的@code{FUNCTION_TYPE}或@code{METHOD_TYPE}。
+
+@item DECL_INITIAL
+@en A function that has a definition in the current translation unit will
+@en have a non-@code{NULL} @code{DECL_INITIAL}.  However, back ends should not make
+@en use of the particular value given by @code{DECL_INITIAL}.
+在当前转换单元中定义的函数将会有一个非@code{NULL}的@code{DECL_INITIAL}。但是，后端不应该使用@code{DECL_INITIAL}给出的该特定值。
+
+It should contain a tree of @code{BLOCK} nodes that mirrors the scopes
+that variables are bound in the function.  Each block contains a list
+of decls declared in a basic block, a pointer to a chain of blocks at
+the next lower scope level, then a pointer to the next block at the
+same level and a backpointer to the parent @code{BLOCK} or
+@code{FUNCTION_DECL}.  So given a function as follows:
+
+@smallexample
+void foo()
+@{
+  int a;
+  @{
+    int b;
+  @}
+  int c;
+@}
+@end smallexample
+
+you would get the following:
+
+@smallexample
+tree foo = FUNCTION_DECL;
+tree decl_a = VAR_DECL;
+tree decl_b = VAR_DECL;
+tree decl_c = VAR_DECL;
+tree block_a = BLOCK;
+tree block_b = BLOCK;
+tree block_c = BLOCK;
+BLOCK_VARS(block_a) = decl_a;
+BLOCK_SUBBLOCKS(block_a) = block_b;
+BLOCK_CHAIN(block_a) = block_c;
+BLOCK_SUPERCONTEXT(block_a) = foo;
+BLOCK_VARS(block_b) = decl_b;
+BLOCK_SUPERCONTEXT(block_b) = block_a;
+BLOCK_VARS(block_c) = decl_c;
+BLOCK_SUPERCONTEXT(block_c) = foo;
+DECL_INITIAL(foo) = block_a;
+@end smallexample
+
+@end ftable
+
+@c ---------------------------------------------------------------------
+@c Function Properties
+@c ---------------------------------------------------------------------
+
+@en @node Function Properties
+@en @subsection Function Properties
+@node Function Properties
+@subsection 函数属性
+@cindex function properties
+@cindex statements
+
+@en To determine the scope of a function, you can use the
+@en @code{DECL_CONTEXT} macro.  This macro will return the class
+@en (either a @code{RECORD_TYPE} or a @code{UNION_TYPE}) or namespace (a
+@en @code{NAMESPACE_DECL}) of which the function is a member.  For a virtual
+@en function, this macro returns the class in which the function was
+@en actually defined, not the base class in which the virtual declaration
+@en occurred.
+要确定函数的作用域，可以使用@code{DECL_CONTEXT}宏。该宏将返回函数作为其成员的类（或者@code{RECORD_TYPE}或者@code{UNION_TYPE}）或命名空间（@code{NAMESPACE_DECL}）。对于虚函数，该宏返回函数被实际定义的类，而不是其声明所在的基类。
+
+@en In C, the @code{DECL_CONTEXT} for a function maybe another function.
+@en This representation indicates that the GNU nested function extension
+@en is in use.  For details on the semantics of nested functions, see the
+@en GCC Manual.  The nested function can refer to local variables in its
+@en containing function.  Such references are not explicitly marked in the
+@en tree structure; back ends must look at the @code{DECL_CONTEXT} for the
+@en referenced @code{VAR_DECL}.  If the @code{DECL_CONTEXT} for the
+@en referenced @code{VAR_DECL} is not the same as the function currently
+@en being processed, and neither @code{DECL_EXTERNAL} nor
+@en @code{TREE_STATIC} hold, then the reference is to a local variable in
+@en a containing function, and the back end must take appropriate action.
+在C中，函数的@code{DECL_CONTEXT}可能为另一个函数。这表示正在使用GNU嵌套函数扩展功能。关于嵌套函数语法的详细内容，参见GCC手册。嵌套函数可以引用其所包含的函数的局部变量。这样的引用没有在树结构体里被显示的标记。如果被引用@code{VAR_DECL}的@code{DECL_CONTEXT}与当前被处理的函数不相同，并且@code{DECL_EXTERNAL}和@code{DECL_STATIC}都没有持有内容，则该引用是针对包含的函数的局部变量，后端必须采取合适的行为。
+
+@ftable @code
+@item DECL_EXTERNAL
+@en This predicate holds if the function is undefined.
+该断言判断函数是否未定义。 
+
+@item TREE_PUBLIC
+@en This predicate holds if the function has external linkage.
+该断言判断函数是否具有外部连接。 
+
+@item TREE_STATIC
+@en This predicate holds if the function has been defined.
+该断言判断函数是否已经被定义。 
+
+@item TREE_THIS_VOLATILE
+@en This predicate holds if the function does not return normally.
+该断言判断函数是否不进行正常的返回。 
+
+@item TREE_READONLY
+@en This predicate holds if the function can only read its arguments.
+该断言判断函数是否只能对参数进行读操作。 
+
+@item DECL_PURE_P
+@en This predicate holds if the function can only read its arguments, but
+@en may also read global memory.
+该断言判断函数是否只能对参数进行读操作，但是还可以读全局内存。 
+
+@item DECL_VIRTUAL_P
+@en This predicate holds if the function is virtual.
+该断言判断函数是否为虚函数。 
+
+@item DECL_ARTIFICIAL
+@en This macro holds if the function was implicitly generated by the
+@en compiler, rather than explicitly declared.  In addition to implicitly
+@en generated class member functions, this macro holds for the special
+@en functions created to implement static initialization and destruction, to
+@en compute run-time type information, and so forth.
+该宏保存了函数是否由编译器隐式的生成，而不是被显式的生成。除了隐式的生成的类成员函数以外，该宏还保存了创建的特定函数，用来实现静态初始化和析构，来计算运行时信息等等。 
+
+@item DECL_FUNCTION_SPECIFIC_TARGET
+@en This macro returns a tree node that holds the target options that are
+@en to be used to compile this particular function or @code{NULL_TREE} if
+@en the function is to be compiled with the target options specified on
+@en the command line.
+该宏返回一个tree节点，存放了用于编译该特定函数的目标机选项，或者为@code{NULL_TREE}，如果是使用命令行中指定的目标机选项来编译该函数。
+
+@item DECL_FUNCTION_SPECIFIC_OPTIMIZATION
+@en This macro returns a tree node that holds the optimization options
+@en that are to be used to compile this particular function or
+@en @code{NULL_TREE} if the function is to be compiled with the
+@en optimization options specified on the command line.
+该宏返回一个tree节点，存放了用于编译该特定函数的优化选项，或者为@code{NULL_TREE}，如果是使用命令行中指定的优化选项来编译该函数。
+
+@end ftable
+
+@c ---------------------------------------------------------------------
+@c Language-dependent trees
+@c ---------------------------------------------------------------------
+
+@en @node Language-dependent trees
+@en @section Language-dependent trees
+@node Language-dependent trees
+@section 语言相关的trees
+@cindex language-dependent trees
+
+Front ends may wish to keep some state associated with various GENERIC
+trees while parsing.  To support this, trees provide a set of flags
+that may be used by the front end.  They are accessed using
+@code{TREE_LANG_FLAG_n} where @samp{n} is currently 0 through 6.
+
+If necessary, a front end can use some language-dependent tree
+codes in its GENERIC representation, so long as it provides a
+hook for converting them to GIMPLE and doesn't expect them to
+work with any (hypothetical) optimizers that run before the
+conversion to GIMPLE@. The intermediate representation used while
+parsing C and C++ looks very little like GENERIC, but the C and
+C++ gimplifier hooks are perfectly happy to take it as input and
+spit out GIMPLE@.
+
+
+
+@node C and C++ Trees
+@section C and C++ Trees
+
+This section documents the internal representation used by GCC to
+represent C and C++ source programs.  When presented with a C or C++
+source program, GCC parses the program, performs semantic analysis
+(including the generation of error messages), and then produces the
+internal representation described here.  This representation contains a
+complete representation for the entire translation unit provided as
+input to the front end.  This representation is then typically processed
+by a code-generator in order to produce machine code, but could also be
+used in the creation of source browsers, intelligent editors, automatic
+documentation generators, interpreters, and any other programs needing
+the ability to process C or C++ code.
+
+This section explains the internal representation.  In particular, it
+documents the internal representation for C and C++ source
+constructs, and the macros, functions, and variables that can be used to
+access these constructs.  The C++ representation is largely a superset
+of the representation used in the C front end.  There is only one
+construct used in C that does not appear in the C++ front end and that
+is the GNU ``nested function'' extension.  Many of the macros documented
+here do not apply in C because the corresponding language constructs do
+not appear in C@.
+
+The C and C++ front ends generate a mix of GENERIC trees and ones
+specific to C and C++.  These language-specific trees are higher-level
+constructs than the ones in GENERIC to make the parser's job easier.
+This section describes those trees that aren't part of GENERIC as well
+as aspects of GENERIC trees that are treated in a language-specific
+manner.
+
+If you are developing a ``back end'', be it is a code-generator or some
+other tool, that uses this representation, you may occasionally find
+that you need to ask questions not easily answered by the functions and
+macros available here.  If that situation occurs, it is quite likely
+that GCC already supports the functionality you desire, but that the
+interface is simply not documented here.  In that case, you should ask
+the GCC maintainers (via mail to @email{gcc@@gcc.gnu.org}) about
+documenting the functionality you require.  Similarly, if you find
+yourself writing functions that do not deal directly with your back end,
+but instead might be useful to other people using the GCC front end, you
+should submit your patches for inclusion in GCC@.
+
+@en @menu
+@en * Types for C++::               Fundamental and aggregate types.
+@en * Namespaces::                  Namespaces.
+@en * Classes::                     Classes.
+@en * Functions for C++::           Overloading and accessors for C++.
+@en * Statements for C++::          Statements specific to C and C++.
+@en * C++ Expressions::    From @code{typeid} to @code{throw}.
+@en @end menu
+@menu
+* Types for C++::               基本类型和聚合类型
+* Namespaces::                  命名空间
+* Classes::                     类
+* Functions for C++::           C++重载和访问
+* Statements for C++::          C和C++特定的语句
+* C++ Expressions::             从@code{typeid}到@code{throw}
+@end menu
+
+@en @node Types for C++
+@en @subsection Types for C++
+@node Types for C++
+@subsection C++类型
+@tindex UNKNOWN_TYPE
+@tindex TYPENAME_TYPE
+@tindex TYPEOF_TYPE
+@findex CP_TYPE_QUALS
+@findex TYPE_UNQUALIFIED
+@findex TYPE_QUAL_CONST
+@findex TYPE_QUAL_VOLATILE
+@findex TYPE_QUAL_RESTRICT
+@findex TYPE_MAIN_VARIANT
+@cindex qualified type
+@findex TYPE_SIZE
+@findex TYPE_ALIGN
+@findex TYPE_PRECISION
+@findex TYPE_ARG_TYPES
+@findex TYPE_METHOD_BASETYPE
+@findex TYPE_PTRMEM_P
+@findex TYPE_OFFSET_BASETYPE
+@findex TREE_TYPE
+@findex TYPE_CONTEXT
+@findex TYPE_NAME
+@findex TYPENAME_TYPE_FULLNAME
+@findex TYPE_FIELDS
+@findex TYPE_PTROBV_P
+
+@en In C++, an array type is not qualified; rather the type of the array
+@en elements is qualified.  This situation is reflected in the intermediate
+@en representation.  The macros described here will always examine the
+@en qualification of the underlying element type when applied to an array
+@en type.  (If the element type is itself an array, then the recursion
+@en continues until a non-array type is found, and the qualification of this
+@en type is examined.)  So, for example, @code{CP_TYPE_CONST_P} will hold of
+@en the type @code{const int ()[7]}, denoting an array of seven @code{int}s.
+在C++中，数组类型没有被限定，而是数组元素的类型被限定。这种情况反映在中间表示中。这里描述的宏在应用到数组类型时，将总是检验元素类型的限定符。（如果元素类型本身是一个数组，则会递归执行只到找到非数组类型，并检验该类型的限定符）所以，例如，@code{CP_TYPE_CONST_P}当表示具有七个@code{int}的数组时，将持有@code{const int ()[7]}类型。
+
+@en The following functions and macros deal with cv-qualification of types:
+下列函数和宏处理cv-qualification的类型：
+@ftable @code
+@item CP_TYPE_QUALS
+@en This macro returns the set of type qualifiers applied to this type.
+@en This value is @code{TYPE_UNQUALIFIED} if no qualifiers have been
+@en applied.  The @code{TYPE_QUAL_CONST} bit is set if the type is
+@en @code{const}-qualified.  The @code{TYPE_QUAL_VOLATILE} bit is set if the
+@en type is @code{volatile}-qualified.  The @code{TYPE_QUAL_RESTRICT} bit is
+@en set if the type is @code{restrict}-qualified.
+该宏返回应用到该类型的类型限定符集。如果没有应用限定符则该值为@code{TYPE_UNQUALIFIED}。如果类型是@code{const}的，则会设置@code{TYPE_QUAL_CONST}位。如果类型是@code{volatile}的，则会设置@code{TYPE_QUAL_VOLATILE}位。如果类型是@code{restrict}的，则会设置@code{TYPE_QUAL_RESTRICT}位。 
+
+@item CP_TYPE_CONST_P
+@en This macro holds if the type is @code{const}-qualified.
+该宏当类型是@code{const}时有效。
+
+@item CP_TYPE_VOLATILE_P
+@en This macro holds if the type is @code{volatile}-qualified.
+该宏当类型是@code{volatile}时有效。 
+
+@item CP_TYPE_RESTRICT_P
+@en This macro holds if the type is @code{restrict}-qualified.
+该宏当类型是@code{restrict}时有效。 
+
+@item CP_TYPE_CONST_NON_VOLATILE_P
+@en This predicate holds for a type that is @code{const}-qualified, but
+@en @emph{not} @code{volatile}-qualified; other cv-qualifiers are ignored as
+@en well: only the @code{const}-ness is tested.
+该断言当类型是@code{const}的，但@emph{不是}@code{volatile}的时有效。
+其它cv-qualifiers会被忽略，只测试@code{const}。 
+
+@end ftable
+
+@en A few other macros and functions are usable with all types:
+一些其它的宏和函数可用于所有的类型：
+@ftable @code
+@item TYPE_SIZE
+@en The number of bits required to represent the type, represented as an
+@en @code{INTEGER_CST}.  For an incomplete type, @code{TYPE_SIZE} will be
+@en @code{NULL_TREE}.
+类型表示所需要的位数，为一个@code{INTEGER_CST}。对于不完全类型，@code{TYPE_SIZE}将为@code{NULL_TREE}。 
+
+@item TYPE_ALIGN
+@en The alignment of the type, in bits, represented as an @code{int}.
+类型的对齐位数，为一个@code{int}。 
+
+@item TYPE_NAME
+@en This macro returns a declaration (in the form of a @code{TYPE_DECL}) for
+@en the type.  (Note this macro does @emph{not} return an
+@en @code{IDENTIFIER_NODE}, as you might expect, given its name!)  You can
+@en look at the @code{DECL_NAME} of the @code{TYPE_DECL} to obtain the
+@en actual name of the type.  The @code{TYPE_NAME} will be @code{NULL_TREE}
+@en for a type that is not a built-in type, the result of a typedef, or a
+@en named class type.
+该宏返回类型的一个声明（按照@code{TYPE_DECL}的型式）。（注意该宏不返回@code{IDENTIFIER_NODE}）你可以查看@code{TYPE_DECL}的@code{DECL_NAME}来获得类型的实际的名字。@code{TYPE_NAME}将为@code{NULL_TREE}，对于不是内建类型的，typedef的，或者命名的class类型。
+
+@item CP_INTEGRAL_TYPE
+@en This predicate holds if the type is an integral type.  Notice that in
+@en C++, enumerations are @emph{not} integral types.
+该断言有效，如果类型为一个整数类型。注意在C++中，枚举@emph{不是}整数类型。 
+
+@item ARITHMETIC_TYPE_P
+@en This predicate holds if the type is an integral type (in the C++ sense)
+@en or a floating point type.
+该断言有效，如果类型为一个整数类型（按照c++的观点）或者一个浮点类型。 
+
+@item CLASS_TYPE_P
+@en This predicate holds for a class-type.
+该断言有效，对于一个class类型。 
+
+@item TYPE_BUILT_IN
+@en This predicate holds for a built-in type.
+该断言有效，对于一个内建类型。 
+
+@item TYPE_PTRMEM_P
+@en This predicate holds if the type is a pointer to data member.
+该断言有效，如果类型为一个指向数据成员的指针。 
+
+@item TYPE_PTR_P
+@en This predicate holds if the type is a pointer type, and the pointee is
+@en not a data member.
+该断言有效，如果类型为一个指针，而指向者不是一个数据成员。 
+
+@item TYPE_PTRFN_P
+@en This predicate holds for a pointer to function type.
+该断言有效，对于一个执行函数类型的指针。 
+
+@item TYPE_PTROB_P
+@en This predicate holds for a pointer to object type.  Note however that it
+@en does not hold for the generic pointer to object type @code{void *}.  You
+@en may use @code{TYPE_PTROBV_P} to test for a pointer to object type as
+@en well as @code{void *}.
+该断言有效，对于一个指向object类型的指针。注意其对于指向object类型@code{void *}的通用指针无效。你可以使用@code{TYPE_PTROBV_P}来测试指针是指向object类型，同时也是@code{void *}。 
+
+@end ftable
+
+@en The table below describes types specific to C and C++ as well as
+@en language-dependent info about GENERIC types.
+下表描述了C和C++特定的类型，以及GENERIC类型中语言相关的信息。
+
+@table @code
+
+@item POINTER_TYPE
+@en Used to represent pointer types, and pointer to data member types.  If
+@en @code{TREE_TYPE} 
+@en is a pointer to data member type, then @code{TYPE_PTRMEM_P} will hold.
+@en For a pointer to data member type of the form @samp{T X::*},
+@en @code{TYPE_PTRMEM_CLASS_TYPE} will be the type @code{X}, while
+@en @code{TYPE_PTRMEM_POINTED_TO_TYPE} will be the type @code{T}.
+用来表示指针类型，以及指向数据成员的指针类型。@code{TREE_TYPE}给出了所指向的类型。如果类型为一个指向数据成员的指针，则@code{TYPE_PTRMEM_P}成立。对于一个指向@samp{T X::*}形式的数据成员类型的指针，@code{TYPE_PTRMEM_CLASS_TYPE}将为类型@code{X}，而@code{TYPE_PTRMEM_POINTED_TO_TYPE}为类型@code{T}。
+
+@item RECORD_TYPE
+@en Used to represent @code{struct} and @code{class} types in C and C++.  If
+@en @code{TYPE_PTRMEMFUNC_P} holds, then this type is a pointer-to-member
+@en type.  In that case, the @code{TYPE_PTRMEMFUNC_FN_TYPE} is a
+@en @code{POINTER_TYPE} pointing to a @code{METHOD_TYPE}.  The
+@en @code{METHOD_TYPE} is the type of a function pointed to by the
+@en pointer-to-member function.  If @code{TYPE_PTRMEMFUNC_P} does not hold,
+@en this type is a class type.  For more information, @pxref{Classes}.
+用来表示@code{struct}和@code{class}类型，以及指向成员函数和其它语言中类似结构的指针。@code{TYPE_FIELDS}包含了该类型中包含的项，其可以为@code{FIELD_DECL}, @code{VAR_DECL}, @code{CONST_DECL}或@code{TYPE_DECL}。你不能假设类型中的域之间的顺序，以及它们是否有重叠。如果@code{TYPE_PTRMEMFUNC_P}成立，则该类型为一个指向成员（pointer-to-member）的类型。这种情况下，@code{TYPE_PTRMEMFUNC_FN_TYPE}为一个@code{POINTER_TYPE}，指向一个@code{METHOD_TYPE}。@code{METHOD_TYPE}为由pointer-to-member函数指向的函数的类型。如果@code{TYPE_PTRMEMFUNC_P}不成立，则该类型为一个class类型。更多信息，@pxref{Classes}。
+
+@item UNKNOWN_TYPE
+@en This node is used to represent a type the knowledge of which is
+@en insufficient for a sound processing.
+该节点用来表示一个类型，其信息不足以进行合理的处理。
+
+@item TYPENAME_TYPE
+@en Used to represent a construct of the form @code{typename T::A}.  The
+@en @code{TYPE_CONTEXT} is @code{T}; the @code{TYPE_NAME} is an
+@en @code{IDENTIFIER_NODE} for @code{A}.  If the type is specified via a
+@en template-id, then @code{TYPENAME_TYPE_FULLNAME} yields a
+@en @code{TEMPLATE_ID_EXPR}.  The @code{TREE_TYPE} is non-@code{NULL} if the
+@en node is implicitly generated in support for the implicit typename
+@en extension; in which case the @code{TREE_TYPE} is a type node for the
+@en base-class.
+用于表示@code{typename T::A}。@code{TYPE_CONTEXT}为@code{T}；@code{TYPE_NAME}为@code{A}的@code{IDENTIFIER_NODE}。如果类型通过模板id指定，则@code{TYPENAME_TYPE_FULLNAME}产生一个@code{TEMPLATE_ID_EXPR}。如果节点是被隐式的生成，用来支持隐式类型名扩展，则@code{TREE_TYPE}不为@code{NULL}；这种情况下，@code{TREE_TYPE}为基类的类型节点。
+
+@item TYPEOF_TYPE
+@en Used to represent the @code{__typeof__} extension.  The
+@en @code{TYPE_FIELDS} is the expression the type of which is being
+@en represented.
+用于表示@code{__typeof__}扩展。@code{TYPE_FIELDS}为被表示的类型的表达式。
+@end table
+
+
+@c ---------------------------------------------------------------------
+@c Namespaces
+@c ---------------------------------------------------------------------
+
+@en @node Namespaces
+@en @subsection Namespaces
+@node Namespaces
+@subsection 命名空间
+@cindex namespace, scope
+@tindex NAMESPACE_DECL
+
+@en The root of the entire intermediate representation is the variable
+@en @code{global_namespace}.  This is the namespace specified with @code{::}
+@en in C++ source code.  All other namespaces, types, variables, functions,
+@en and so forth can be found starting with this namespace.
+整个中间表示的根是变量@code{global_namespace}。
+这是在C++源代码中由@code{::}描述的命名空间。
+所有其它命名空间，类型，变量，函数等，都能够从这里开始查找而获得。
+
+@en However, except for the fact that it is distinguished as the root of the
+@en representation, the global namespace is no different from any other
+@en namespace.  Thus, in what follows, we describe namespaces generally,
+@en rather than the global namespace in particular.
+然而，除了实际上是作为根表示以外，全局命名空间与其它命名空间没有区别。
+因此，在下文中，我们描述的是普遍的命名空间，而不是特定的全局命名空间。
+
+@en A namespace is represented by a @code{NAMESPACE_DECL} node.
+命名空间由@code{NAMESPACE_DECL}节点表示。
+
+@en The following macros and functions can be used on a @code{NAMESPACE_DECL}:
+下列宏和函数可以用于@code{NAMESPACE_DECL}:
+
+@ftable @code
+@item DECL_NAME
+@en This macro is used to obtain the @code{IDENTIFIER_NODE} corresponding to
+@en the unqualified name of the name of the namespace (@pxref{Identifiers}).
+@en The name of the global namespace is @samp{::}, even though in C++ the
+@en global namespace is unnamed.  However, you should use comparison with
+@en @code{global_namespace}, rather than @code{DECL_NAME} to determine
+@en whether or not a namespace is the global one.  An unnamed namespace
+@en will have a @code{DECL_NAME} equal to @code{anonymous_namespace_name}.
+@en Within a single translation unit, all unnamed namespaces will have the
+@en same name.
+该宏用于获得@code{IDENTIFIER_NODE}相应的命名空间的未限定名
+（@pxref{Identifiers}）。
+全局命名空间的名字为@samp{::}，虽然在C++中全局命名空间是没有名字的。
+然而，你应该使用与@code{global_namespace}比较的方式，
+而不是用@code{DECL_NAME}来确定命名空间是否为全局的。
+一个未命名的命名空间，其 @code{DECL_NAME}等于@code{anonymous_namespace_name}。
+在一个单独的转换单元中，所有未命名空间将具有同一名字。 
+
+@item DECL_CONTEXT
+@en This macro returns the enclosing namespace.  The @code{DECL_CONTEXT} for
+@en the @code{global_namespace} is @code{NULL_TREE}.
+该宏返回闭包的（enclosing）命名空间。
+@code{global_namespace}的@code{DECL_CONTEXT}为@code{NULL_TREE}。
+
+@item DECL_NAMESPACE_ALIAS
+@en If this declaration is for a namespace alias, then
+@en @code{DECL_NAMESPACE_ALIAS} is the namespace for which this one is an
+@en alias.
+如果该声明是一个命名空间的别名，
+则@code{DECL_NAMESPACE_ALIAS}为该别名所针对的命名空间。
+
+@en Do not attempt to use @code{cp_namespace_decls} for a namespace which is
+@en an alias.  Instead, follow @code{DECL_NAMESPACE_ALIAS} links until you
+@en reach an ordinary, non-alias, namespace, and call
+@en @code{cp_namespace_decls} there.
+不要对别名命名空间尝试使用@code{cp_namespace_decls}。
+相反的，沿着@code{DECL_NAMESPACE_ALIAS}链直到一个普通的，非别名的命名空间，
+然后在那里调用@code{cp_namespace_decls}。
+
+@item DECL_NAMESPACE_STD_P
+@en This predicate holds if the namespace is the special @code{::std}
+@en namespace.
+该断言当命名空间为特殊的@code{::std}命名空间时有效。
+
+@item cp_namespace_decls
+@en This function will return the declarations contained in the namespace,
+@en including types, overloaded functions, other namespaces, and so forth.
+@en If there are no declarations, this function will return
+@en @code{NULL_TREE}.  The declarations are connected through their
+@en @code{TREE_CHAIN} fields.
+该函数将返回包含在命名空间中的声明，包括类型，重载函数，其它命名空间等等。
+如果没有声明，该函数将返回@code{NULL_TREE}。
+声明通过它们的@code{TREE_CHAIN}域连在一起。
+
+@en Although most entries on this list will be declarations,
+@en @code{TREE_LIST} nodes may also appear.  In this case, the
+@en @code{TREE_VALUE} will be an @code{OVERLOAD}.  The value of the
+@en @code{TREE_PURPOSE} is unspecified; back ends should ignore this value.
+@en As with the other kinds of declarations returned by
+@en @code{cp_namespace_decls}, the @code{TREE_CHAIN} will point to the next
+@en declaration in this list.
+虽然这个链表中的大多数实体将为声明，但也可能会出现@code{TREE_LIST}。
+这种情况下，@code{TREE_VALUE}将为一个@code{OVERLOAD}。
+@code{TREE_PURPOSE}的值未指定；后端应该忽略这个值。
+至于由@code{cp_namespace_decls}返回的其它种类的声明，
+@code{TREE_CHAIN}将会指向该链表中的下一个声明。
+
+@en For more information on the kinds of declarations that can occur on this
+@en list, @xref{Declarations}.  Some declarations will not appear on this
+@en list.  In particular, no @code{FIELD_DECL}, @code{LABEL_DECL}, or
+@en @code{PARM_DECL} nodes will appear here.
+关于可以出现在该链表中的各种声明的更多信息，@xref{Declarations}。
+一些声明将不会出现在该链表中。
+特别是，@code{FIELD_DECL}, @code{LABEL_DECL}和@code{PARM_DECL}节点。
+
+@en This function cannot be used with namespaces that have
+@en @code{DECL_NAMESPACE_ALIAS} set.
+该函数不能用于设置了@code{DECL_NAMESPACE_ALIAS}的命名空间。
+
+@end ftable
+
+@c ---------------------------------------------------------------------
+@c Classes
+@c ---------------------------------------------------------------------
+
+@en @node Classes
+@en @subsection Classes
+@node Classes
+@subsection 类
+@cindex class, scope
+@tindex RECORD_TYPE
+@tindex UNION_TYPE
+@findex CLASSTYPE_DECLARED_CLASS
+@findex TYPE_BINFO
+@findex BINFO_TYPE
+@findex TYPE_FIELDS
+@findex TYPE_VFIELD
+@findex TYPE_METHODS
+
+@en Besides namespaces, the other high-level scoping construct in C++ is the
+@en class.  (Throughout this manual the term @dfn{class} is used to mean the
+@en types referred to in the ANSI/ISO C++ Standard as classes; these include
+@en types defined with the @code{class}, @code{struct}, and @code{union}
+@en keywords.)
+除了命名空间以外，C++中另一个高层次的作用域结构是类。
+（在该手册中，术语@dfn{class}用来表示ANSI/ISO C++标准中的@code{class}类型；
+这包括用@code{class}, @code{struct}和@code{union}关键字定义的类型。）
+
+@en A class type is represented by either a @code{RECORD_TYPE} or a
+@en @code{UNION_TYPE}.  A class declared with the @code{union} tag is
+@en represented by a @code{UNION_TYPE}, while classes declared with either
+@en the @code{struct} or the @code{class} tag are represented by
+@en @code{RECORD_TYPE}s.  You can use the @code{CLASSTYPE_DECLARED_CLASS}
+@en macro to discern whether or not a particular type is a @code{class} as
+@en opposed to a @code{struct}.  This macro will be true only for classes
+@en declared with the @code{class} tag.
+类的类型被表示为@code{RECORD_TYPE}或者@code{UNION_TYPE}。
+使用@code{union}标签声明的类由@code{UNION_TYPE}来表示，
+而使用@code{struct}或者@code{class}标签声明的类由@code{RECORD_TYPE}来表示。
+可以使用@code{CLASSTYPE_DECLARED_CLASS}宏来判定一个特定类型是
+@code{class}的还是@code{struct}的。
+该宏只在类使用@code{class}标签声明时才为真。
+
+@en Almost all non-function members are available on the @code{TYPE_FIELDS}
+@en list.  Given one member, the next can be found by following the
+@en @code{TREE_CHAIN}.  You should not depend in any way on the order in
+@en which fields appear on this list.  All nodes on this list will be
+@en @samp{DECL} nodes.  A @code{FIELD_DECL} is used to represent a non-static
+@en data member, a @code{VAR_DECL} is used to represent a static data
+@en member, and a @code{TYPE_DECL} is used to represent a type.  Note that
+@en the @code{CONST_DECL} for an enumeration constant will appear on this
+@en list, if the enumeration type was declared in the class.  (Of course,
+@en the @code{TYPE_DECL} for the enumeration type will appear here as well.)
+@en There are no entries for base classes on this list.  In particular,
+@en there is no @code{FIELD_DECL} for the ``base-class portion'' of an
+@en object.
+几乎所有非函数的成员都在@code{TYPE_FIELDS}列表中。
+给出一个成员，可以通过@code{TREE_CHAIN}来找到下一个。
+不要依赖于在该链表中出现的域的顺序。链表中的所有节点将为@samp{DECL}节点。
+@code{FIELD_DECL}用于表示非静态数据成员，@code{VAR_DECL}用于表示静态数据成员，
+而@code{TYPE_DECL}用于表示类型。注意如果在类中声明了枚举类型，
+则用于枚举常量的@code{CONST_DECL}将会出现在该链表中。
+（当然，枚举类型的@code{TYPE_DECL}也会出现。）链表中没有基类的实体。
+特别是，对于一个对象的基类部分“base-class portion”，没有@code{FIELD_DECL}。
+
+@en The @code{TYPE_VFIELD} is a compiler-generated field used to point to
+@en virtual function tables.  It may or may not appear on the
+@en @code{TYPE_FIELDS} list.  However, back ends should handle the
+@en @code{TYPE_VFIELD} just like all the entries on the @code{TYPE_FIELDS}
+@en list.
+@code{TYPE_VFIELD}是编译器生成的域用于指向虚函数表。
+它有可能会出现在@code{TYPE_FIELDS}链表中。
+然而，后端应该处理@code{TYPE_VFIELD}，
+就像@code{TYPE_FIELDS}链表中所有其它实体一样。
+
+@en The function members are available on the @code{TYPE_METHODS} list.
+@en Again, subsequent members are found by following the @code{TREE_CHAIN}
+@en field.  If a function is overloaded, each of the overloaded functions
+@en appears; no @code{OVERLOAD} nodes appear on the @code{TYPE_METHODS}
+@en list.  Implicitly declared functions (including default constructors,
+@en copy constructors, assignment operators, and destructors) will appear on
+@en this list as well.
+函数成员在@code{TYPE_METHODS}链表中。
+同样，后续成员可以通过@code{TREE_CHAIN}域来找到。
+如果函数是重载的，每个重载函数都会出现；
+@code{OVERLOAD}节点不会出现在@code{TYPE_METHODS}链表上。
+隐式声明的函数（包括缺省构造函数，复制构造函数，赋值操作和析构函数）
+也会出现在该链表中。
+
+@en Every class has an associated @dfn{binfo}, which can be obtained with
+@en @code{TYPE_BINFO}.  Binfos are used to represent base-classes.  The
+@en binfo given by @code{TYPE_BINFO} is the degenerate case, whereby every
+@en class is considered to be its own base-class.  The base binfos for a
+@en particular binfo are held in a vector, whose length is obtained with
+@en @code{BINFO_N_BASE_BINFOS}.  The base binfos themselves are obtained
+@en with @code{BINFO_BASE_BINFO} and @code{BINFO_BASE_ITERATE}.  To add a
+@en new binfo, use @code{BINFO_BASE_APPEND}.  The vector of base binfos can
+@en be obtained with @code{BINFO_BASE_BINFOS}, but normally you do not need
+@en to use that.  The class type associated with a binfo is given by
+@en @code{BINFO_TYPE}.  It is not always the case that @code{BINFO_TYPE
+@en (TYPE_BINFO (x))}, because of typedefs and qualified types.  Neither is
+@en it the case that @code{TYPE_BINFO (BINFO_TYPE (y))} is the same binfo as
+@en @code{y}.  The reason is that if @code{y} is a binfo representing a
+@en base-class @code{B} of a derived class @code{D}, then @code{BINFO_TYPE
+@en (y)} will be @code{B}, and @code{TYPE_BINFO (BINFO_TYPE (y))} will be
+@en @code{B} as its own base-class, rather than as a base-class of @code{D}.
+每个类都具有一个相关的@dfn{binfo}，其能够通过@code{TYPE_BINFO}获得。
+Binfos用于表示基类。由@code{TYPE_BINFO}给出的binfo是退化情况，
+让每个类被考虑为它自己的基类。
+
+@en The access to a base type can be found with @code{BINFO_BASE_ACCESS}.
+@en This will produce @code{access_public_node}, @code{access_private_node}
+@en or @code{access_protected_node}.  If bases are always public,
+@en @code{BINFO_BASE_ACCESSES} may be @code{NULL}.
+对基类型的访问可以通过@code{BINFO_BASE_ACCESS}。
+这将产生@code{access_public_node}, @code{access_private_node}或
+@code{access_protected_node}。
+如果基类总是public的，@code{BINFO_BASE_ACCESSES}可以为@code{NULL}。
+
+@en @code{BINFO_VIRTUAL_P} is used to specify whether the binfo is inherited
+@en virtually or not.  The other flags, @code{BINFO_MARKED_P} and
+@en @code{BINFO_FLAG_1} to @code{BINFO_FLAG_6} can be used for language
+@en specific use.
+@code{BINFO_VIRTUAL_P}用于指定binfo是否为虚继承。
+其它标识，@code{BINFO_MARKED_P}和
+@code{BINFO_FLAG_1}到@code{BINFO_FLAG_6}可以用于语言特定用途。
+
+@en The following macros can be used on a tree node representing a class-type.
+下列宏可以用在表示class类型的树节点上。
+
+@ftable @code
+@item LOCAL_CLASS_P
+@en This predicate holds if the class is local class @emph{i.e.}@: declared
+@en inside a function body.
+该断言当是局部类时有效，即在函数体内声明的类。
+
+@item TYPE_POLYMORPHIC_P
+@en This predicate holds if the class has at least one virtual function
+@en (declared or inherited).
+该断言当类至少具有一个虚函数（声明的或者继承的）时有效。
+
+@item TYPE_HAS_DEFAULT_CONSTRUCTOR
+@en This predicate holds whenever its argument represents a class-type with
+@en default constructor.
+该断言当参数表示具有缺省构造函数的class类型时有效。
+
+@item CLASSTYPE_HAS_MUTABLE
+@itemx TYPE_HAS_MUTABLE_P
+@en These predicates hold for a class-type having a mutable data member.
+这些断言表示了一个class-type具有mutable数据成员。
+
+@item CLASSTYPE_NON_POD_P
+@en This predicate holds only for class-types that are not PODs.
+该断言表示了不是POD的class-types。
+
+@item TYPE_HAS_NEW_OPERATOR
+@en This predicate holds for a class-type that defines
+@en @code{operator new}.
+该断言表示一个class-type定义了@code{operator new}。
+
+@item TYPE_HAS_ARRAY_NEW_OPERATOR
+@en This predicate holds for a class-type for which
+@en @code{operator new[]} is defined.
+该断言表示一个class-type定义了@code{operator new[]}。
+
+@item TYPE_OVERLOADS_CALL_EXPR
+@en This predicate holds for class-type for which the function call
+@en @code{operator()} is overloaded.
+该断言表示class-type重载了函数调用@code{operator()}。
+
+@item TYPE_OVERLOADS_ARRAY_REF
+@en This predicate holds for a class-type that overloads
+@en @code{operator[]}
+该断言表示class-type重载了@code{operator[]}。
+
+@item TYPE_OVERLOADS_ARROW
+@en This predicate holds for a class-type for which @code{operator->} is
+@en overloaded.
+该断言表示class-type重载了@code{operator->}。
+
+@end ftable
+
+@en @node Functions for C++
+@en @subsection Functions for C++
+@node Functions for C++
+@subsection C++函数
+@cindex function
+@tindex FUNCTION_DECL
+@tindex OVERLOAD
+@findex OVL_CURRENT
+@findex OVL_NEXT
+
+@en A function is represented by a @code{FUNCTION_DECL} node.  A set of
+@en overloaded functions is sometimes represented by an @code{OVERLOAD} node.
+函数由@code{FUNCTION_DECL}节点表示。
+重载函数集有时通过一个@code{OVERLOAD}节点来表示。
+
+@en An @code{OVERLOAD} node is not a declaration, so none of the
+@en @samp{DECL_} macros should be used on an @code{OVERLOAD}.  An
+@en @code{OVERLOAD} node is similar to a @code{TREE_LIST}.  Use
+@en @code{OVL_CURRENT} to get the function associated with an
+@en @code{OVERLOAD} node; use @code{OVL_NEXT} to get the next
+@en @code{OVERLOAD} node in the list of overloaded functions.  The macros
+@en @code{OVL_CURRENT} and @code{OVL_NEXT} are actually polymorphic; you can
+@en use them to work with @code{FUNCTION_DECL} nodes as well as with
+@en overloads.  In the case of a @code{FUNCTION_DECL}, @code{OVL_CURRENT}
+@en will always return the function itself, and @code{OVL_NEXT} will always
+@en be @code{NULL_TREE}.
+@code{OVERLOAD}节点不是一个声明。
+所以没有@samp{DECL_}宏用于@code{OVERLOAD}。
+@code{OVERLOAD}节点类似于一个@code{TREE_LIST}。
+使用@code{OVL_CURRENT}来获得@code{OVERLOAD}节点关联的函数；
+使用@code{OVL_NEXT}来获得重载函数列表中下一个@code{OVERLOAD}节点。
+宏@code{OVL_CURRENT}和@code{OVL_NEXT}实际上是多态的；
+你可以用它们工作于@code{FUNCTION_DECL}节点上，就像在重载上一样。
+在@code{FUNCTION_DECL}的情况下，@code{OVL_CURRENT}将总是返回函数本身，
+@code{OVL_NEXT}将总是为@code{NULL_TREE}。
+
+@en To determine the scope of a function, you can use the
+@en @code{DECL_CONTEXT} macro.  This macro will return the class
+@en (either a @code{RECORD_TYPE} or a @code{UNION_TYPE}) or namespace (a
+@en @code{NAMESPACE_DECL}) of which the function is a member.  For a virtual
+@en function, this macro returns the class in which the function was
+@en actually defined, not the base class in which the virtual declaration
+@en occurred.
+要确定函数的作用域，可以使用@code{DECL_CONTEXT}宏。
+该宏将返回函数作为其成员的类（或者@code{RECORD_TYPE}或者@code{UNION_TYPE}）
+或命名空间（@code{NAMESPACE_DECL}）。对于虚函数，
+该宏返回函数被实际定义的类，而不是其声明所在的基类。
+
+@en If a friend function is defined in a class scope, the
+@en @code{DECL_FRIEND_CONTEXT} macro can be used to determine the class in
+@en which it was defined.  For example, in
+如果友函数定义在类的作用域里，
+宏@code{DECL_FRIEND_CONTEXT}可以用来判定其定义所在的类。例如，在
+@smallexample
+class C @{ friend void f() @{@} @};
+@end smallexample
+@noindent
+@en the @code{DECL_CONTEXT} for @code{f} will be the
+@en @code{global_namespace}, but the @code{DECL_FRIEND_CONTEXT} will be the
+@en @code{RECORD_TYPE} for @code{C}.
+中，@code{f}的@code{DECL_CONTEXT}将为@code{global_namespace}，
+而@code{C}的@code{DECL_FRIEND_CONTEXT}将为@code{RECORD_TYPE}。
+
+@en The following macros and functions can be used on a @code{FUNCTION_DECL}:
+下列宏和函数能够用于@code{FUNCTION_DECL}:
+@ftable @code
+@item DECL_MAIN_P
+@en This predicate holds for a function that is the program entry point
+@en @code{::code}.
+该断言判断一个函数是否为程序的入口点@code{::code}。
+
+@item DECL_LOCAL_FUNCTION_P
+@en This predicate holds if the function was declared at block scope, even
+@en though it has a global scope.
+该断言判断函数是否声明在块作用域中，即使具有全局作用域。
+
+@item DECL_ANTICIPATED
+@en This predicate holds if the function is a built-in function but its
+@en prototype is not yet explicitly declared.
+该断言判断函数是否为built-in函数，并且函数原形没有显示声明。
+
+@item DECL_EXTERN_C_FUNCTION_P
+@en This predicate holds if the function is declared as an
+@en `@code{extern "C"}' function.
+该断言判断函数是否声明为`@code{extern "C"}'函数。
+
+@item DECL_LINKONCE_P
+@en This macro holds if multiple copies of this function may be emitted in
+@en various translation units.  It is the responsibility of the linker to
+@en merge the various copies.  Template instantiations are the most common
+@en example of functions for which @code{DECL_LINKONCE_P} holds; G++
+@en instantiates needed templates in all translation units which require them,
+@en and then relies on the linker to remove duplicate instantiations.
+该宏用来判断该函数是否会在不同的转换单元产生多个副本。
+合并不同副本是连接器的责任。
+模版实例是使用@code{DECL_LINKONCE_P}最常见的例子。
+G++会在需要它们的所有转换单元里实例化模版，
+然后依赖连接器去移除重复的实例。
+
+@en FIXME: This macro is not yet implemented.
+FIXME: 该宏还没有实现。
+
+@item DECL_FUNCTION_MEMBER_P
+@en This macro holds if the function is a member of a class, rather than a
+@en member of a namespace.
+该宏用来判断函数是否为一个类的成员，而不是命名空间的成员。
+
+@item DECL_STATIC_FUNCTION_P
+@en This predicate holds if the function a static member function.
+该断言用来判断函数是否为一个静态成员函数。
+
+@item DECL_NONSTATIC_MEMBER_FUNCTION_P
+@en This macro holds for a non-static member function.
+该宏用来判断是否为一个非静态成员函数。
+
+@item DECL_CONST_MEMFUNC_P
+@en This predicate holds for a @code{const}-member function.
+该断言用来判断是否为@code{const}成员函数。
+
+@item DECL_VOLATILE_MEMFUNC_P
+@en This predicate holds for a @code{volatile}-member function.
+该断言用来判断是否为@code{volatile}成员函数。
+
+@item DECL_CONSTRUCTOR_P
+@en This macro holds if the function is a constructor.
+该宏用来判断函数是否为一个构造函数。
+
+@item DECL_NONCONVERTING_P
+@en This predicate holds if the constructor is a non-converting constructor.
+该断言用来判断构造函数是否为一个非转换构造函数。
+
+@item DECL_COMPLETE_CONSTRUCTOR_P
+@en This predicate holds for a function which is a constructor for an object
+@en of a complete type.
+该断言用来判断函数是否为完全类型的对象的构造函数。
+
+@item DECL_BASE_CONSTRUCTOR_P
+@en This predicate holds for a function which is a constructor for a base
+@en class sub-object.
+该断言用来判断函数是否为一个基类的子对象的构造函数。
+
+@item DECL_COPY_CONSTRUCTOR_P
+@en This predicate holds for a function which is a copy-constructor.
+该断言用来判断函数是否为一个复制构造函数。
+
+@item DECL_DESTRUCTOR_P
+@en This macro holds if the function is a destructor.
+该宏用来判断函数是否为一个析构函数。
+
+@item DECL_COMPLETE_DESTRUCTOR_P
+@en This predicate holds if the function is the destructor for an object a
+@en complete type.
+该断言用来判断函数是否为一个完全类型的对象的析构函数。
+
+@item DECL_OVERLOADED_OPERATOR_P
+@en This macro holds if the function is an overloaded operator.
+该宏用来判断函数是否为一个重载操作符。
+
+@item DECL_CONV_FN_P
+@en This macro holds if the function is a type-conversion operator.
+该宏用来判断函数是否为一个类型转换操作符。
+
+@item DECL_GLOBAL_CTOR_P
+@en This predicate holds if the function is a file-scope initialization
+@en function.
+该断言用来判断函数是否为一个文件作用域的初始化函数。
+
+@item DECL_GLOBAL_DTOR_P
+@en This predicate holds if the function is a file-scope finalization
+@en function.
+该断言用来判断函数是否为一个文件作用域的结束化函数。
+
+@item DECL_THUNK_P
+@en This predicate holds if the function is a thunk.
+该断言用来判断函数是否为一个thunk。
+
+@en These functions represent stub code that adjusts the @code{this} pointer
+@en and then jumps to another function.  When the jumped-to function
+@en returns, control is transferred directly to the caller, without
+@en returning to the thunk.  The first parameter to the thunk is always the
+@en @code{this} pointer; the thunk should add @code{THUNK_DELTA} to this
+@en value.  (The @code{THUNK_DELTA} is an @code{int}, not an
+@en @code{INTEGER_CST}.)
+这些函数表示stub代码，用来调整@code{this}指针，然后跳转到另一个函数中。当从被跳转的函数中返回时，控制被直接传给调用者，不需要返回到thunk中。thunk的第一个参数总是为@code{this}指针；thunk应该将该值加上@code{THUNK_DELTA}。（@code{THUNK_DELTA}是一个@code{int}，而不是@code{INTEGER_CST}。）
+
+@en Then, if @code{THUNK_VCALL_OFFSET} (an @code{INTEGER_CST}) is nonzero
+@en the adjusted @code{this} pointer must be adjusted again.  The complete
+@en calculation is given by the following pseudo-code:
+然后，如果@code{THUNK_VCALL_OFFSET}（一个@code{INTEGER_CST}）是非零的，则被调整的@code{this}必须再次被调整。下面的伪代码给出了完整的计算：
+
+@smallexample
+this += THUNK_DELTA
+if (THUNK_VCALL_OFFSET)
+  this += (*((ptrdiff_t **) this))[THUNK_VCALL_OFFSET]
+@end smallexample
+
+@en Finally, the thunk should jump to the location given
+@en by @code{DECL_INITIAL}; this will always be an expression for the
+@en address of a function.
+最终，thunk应该跳转到由@code{DECL_INITIAL}给出的位置；这将总是一个函数地址的表达式。
+
+@item DECL_NON_THUNK_FUNCTION_P
+@en This predicate holds if the function is @emph{not} a thunk function.
+该断言用来判断函数@emph{不是}一个thunk函数。
+
+@item GLOBAL_INIT_PRIORITY
+@en If either @code{DECL_GLOBAL_CTOR_P} or @code{DECL_GLOBAL_DTOR_P} holds,
+@en then this gives the initialization priority for the function.  The
+@en linker will arrange that all functions for which
+@en @code{DECL_GLOBAL_CTOR_P} holds are run in increasing order of priority
+@en before @code{main} is called.  When the program exits, all functions for
+@en which @code{DECL_GLOBAL_DTOR_P} holds are run in the reverse order.
+如果@code{DECL_GLOBAL_CTOR_P}或者@code{DECL_GLOBAL_DTOR_P}有效，则该宏给出了函数的初始优先级。连接器将设法安排@code{DECL_GLOBAL_CTOR_P}所保存的所有的函数在递增的顺序下运行，在@code{main}被调用之前。当程序退出时，@code{DECL_GLOBAL_DTOR_P}所保存的所有函数按照相反的顺序执行。
+
+@item TYPE_RAISES_EXCEPTIONS
+@en This macro returns the list of exceptions that a (member-)function can
+@en raise.  The returned list, if non @code{NULL}, is comprised of nodes
+@en whose @code{TREE_VALUE} represents a type.
+该宏返回（成员）函数可以引起的异常列表。返回的列表，如果不是@code{NULL}，则为@code{TREE_VALUE}代表一个类型的节点组成。
+
+@item TYPE_NOTHROW_P
+@en This predicate holds when the exception-specification of its arguments
+@en is of the form `@code{()}'.
+该断言用来判断是否是使用`@code{()}'形式来指定异常的参数。
+
+@item DECL_ARRAY_DELETE_OPERATOR_P
+@en This predicate holds if the function an overloaded
+@en @code{operator delete[]}.
+该断言用来判断函数是否为一个重载的@code{operator delete[]}。
+
+@end ftable
+
+@c ---------------------------------------------------------------------
+@c Function Bodies
+@c ---------------------------------------------------------------------
+
+@en @node Statements for C++
+@en @subsection Statements for C++
+@node Statements for C++
+@subsection C++语句
+@cindex statements
+@tindex BREAK_STMT
+@tindex CLEANUP_STMT
+@findex CLEANUP_DECL
+@findex CLEANUP_EXPR
+@tindex CONTINUE_STMT
+@tindex DECL_STMT
+@findex DECL_STMT_DECL
+@tindex DO_STMT
+@findex DO_BODY
+@findex DO_COND
+@tindex EMPTY_CLASS_EXPR
+@tindex EXPR_STMT
+@findex EXPR_STMT_EXPR
+@tindex FOR_STMT
+@findex FOR_INIT_STMT
+@findex FOR_COND
+@findex FOR_EXPR
+@findex FOR_BODY
+@tindex HANDLER
+@tindex IF_STMT
+@findex IF_COND
+@findex THEN_CLAUSE
+@findex ELSE_CLAUSE
+@tindex RETURN_STMT
+@findex RETURN_EXPR
+@tindex SUBOBJECT
+@findex SUBOBJECT_CLEANUP
+@tindex SWITCH_STMT
+@findex SWITCH_COND
+@findex SWITCH_BODY
+@tindex TRY_BLOCK
+@findex TRY_STMTS
+@findex TRY_HANDLERS
+@findex HANDLER_PARMS
+@findex HANDLER_BODY
+@findex USING_STMT
+@tindex WHILE_STMT
+@findex WHILE_BODY
+@findex WHILE_COND
+
+@en A function that has a definition in the current translation unit will
+@en have a non-@code{NULL} @code{DECL_INITIAL}.  However, back ends should not make
+@en use of the particular value given by @code{DECL_INITIAL}.
+在当前转换单元中定义的函数将会有一个非@code{NULL}的@code{DECL_INITIAL}。
+但是，后端不应该使用@code{DECL_INITIAL}给出的该特定值。
+
+@en The @code{DECL_SAVED_TREE} macro will give the complete body of the
+@en function.
+宏@code{DECL_SAVED_TREE}将会给出完整的函数体。
+
+@en @subsubsection Statements
+@subsubsection 语句
+
+@en There are tree nodes corresponding to all of the source-level
+@en statement constructs, used within the C and C++ frontends.  These are
+@en enumerated here, together with a list of the various macros that can
+@en be used to obtain information about them.  There are a few macros that
+@en can be used with all statements:
+C和C++前端，使用了对应于所有源级的语句构造的树节点。
+这些都列举在这里，并附上能够用来获得它们的信息的各种宏的列表。
+有一些宏能用于所有的语句：
+
+@ftable @code
+@item STMT_IS_FULL_EXPR_P
+@en In C++, statements normally constitute ``full expressions''; temporaries
+@en created during a statement are destroyed when the statement is complete.
+@en However, G++ sometimes represents expressions by statements; these
+@en statements will not have @code{STMT_IS_FULL_EXPR_P} set.  Temporaries
+@en created during such statements should be destroyed when the innermost
+@en enclosing statement with @code{STMT_IS_FULL_EXPR_P} set is exited.
+在C++里，语句通常构成“充分表达式（full expressions）”；
+在语句中创建的临时事物会在声明完成时被销毁。
+然而，G++有时通过语句来表示表达式；
+这些语句将不会设置@code{STMT_IS_FULL_EXPR_P}。
+在这样的语句中创建的临时事物将会在最内层设置了
+@code{STMT_IS_FULL_EXPR_P}的语句退出时被销毁。
+@end ftable
+
+@en Here is the list of the various statement nodes, and the macros used to
+@en access them.  This documentation describes the use of these nodes in
+@en non-template functions (including instantiations of template functions).
+@en In template functions, the same nodes are used, but sometimes in
+@en slightly different ways.
+这里有一个各种语句节点的列表，以及访问它们的宏。
+该文档描述了在非模板函数（包括模板函数的实例）中这些节点的用法。
+在模板函数里，使用相同的节点，但是有时方法略有不同。
+
+@en Many of the statements have substatements.  For example, a @code{while}
+@en loop will have a body, which is itself a statement.  If the substatement
+@en is @code{NULL_TREE}, it is considered equivalent to a statement
+@en consisting of a single @code{;}, i.e., an expression statement in which
+@en the expression has been omitted.  A substatement may in fact be a list
+@en of statements, connected via their @code{TREE_CHAIN}s.  So, you should
+@en always process the statement tree by looping over substatements, like
+@en this:
+许多语句具有子语句。例如，一个@code{while}循环将会有一个循环体，
+其本身也是一个语句。如果子语句是@code{NULL_TREE}，
+则被认为相当于一个@code{;}组成的语句，即一个表达式语句，其中表达式为空。
+一个子语句实际上可以为一个语句列表，通过它们的@code{TREE_CHAIN}连接一起。
+所以，你应该总是通过循环所有的子语句来处理语句树，像这样：
+@smallexample
+void process_stmt (stmt)
+     tree stmt;
+@{
+  while (stmt)
+    @{
+      switch (TREE_CODE (stmt))
+        @{
+        case IF_STMT:
+          process_stmt (THEN_CLAUSE (stmt));
+          /* @r{More processing here.}  */
+          break;
+
+        @dots{}
+        @}
+
+      stmt = TREE_CHAIN (stmt);
+    @}
+@}
+@end smallexample
+@en In other words, while the @code{then} clause of an @code{if} statement
+@en in C++ can be only one statement (although that one statement may be a
+@en compound statement), the intermediate representation will sometimes use
+@en several statements chained together.
+换句话说，虽然C++中@code{if}语句的@code{then}子句可以只是一个语句，
+但中间表示有时会使用多个语句连接在一起。
+
+@table @code
+@item BREAK_STMT
+@en Used to represent a @code{break} statement.  There are no additional
+@en fields.
+用来表示一条@code{break}语句。没有额外的域。
+
+@item CLEANUP_STMT
+@en Used to represent an action that should take place upon exit from the
+@en enclosing scope.  Typically, these actions are calls to destructors for
+@en local objects, but back ends cannot rely on this fact.  If these nodes
+@en are in fact representing such destructors, @code{CLEANUP_DECL} will be
+@en the @code{VAR_DECL} destroyed.  Otherwise, @code{CLEANUP_DECL} will be
+@en @code{NULL_TREE}.  In any case, the @code{CLEANUP_EXPR} is the
+@en expression to execute.  The cleanups executed on exit from a scope
+@en should be run in the reverse order of the order in which the associated
+@en @code{CLEANUP_STMT}s were encountered.
+用来表示在封闭作用域的出口上执行的动作。
+通常，这些动作是为局部对象调用析构函数，但是后端不能依靠这个事实。
+如果这些节点确实是表示了这样的析构函数，
+@code{CLEANUP_DECL}将为销毁的@code{VAR_DECL}。
+否则@code{CLEANUP_DECL}为@code{NULL_TREE}。
+无论哪种情况，@code{CLEANUP_EXPR}都是要被执行的表达式。
+清除工作在作用域的出口被执行，
+并且按照所遇到的@code{CLEANUP_STMT}的相反顺序进行。
+
+@item CONTINUE_STMT
+@en Used to represent a @code{continue} statement.  There are no additional
+@en fields.
+用来表示一条@code{continue}语句。没有额外的域。
+
+@item CTOR_STMT
+@en Used to mark the beginning (if @code{CTOR_BEGIN_P} holds) or end (if
+@en @code{CTOR_END_P} holds of the main body of a constructor.  See also
+@en @code{SUBOBJECT} for more information on how to use these nodes.
+用于标记构建函数体的起始（@code{CTOR_BEGIN_P}）或结尾（@code{CTOR_END_P}）。关于如何使用这些节点的更多信息，参见@code{SUBOBJECT}。
+
+@item DO_STMT
+@en Used to represent a @code{do} loop.  The body of the loop is given by
+@en @code{DO_BODY} while the termination condition for the loop is given by
+@en @code{DO_COND}.  The condition for a @code{do}-statement is always an
+@en expression.
+用来表示@code{do}循环。循环体由@code{DO_BODY}给出，
+终止条件由@code{DO_COND}给出。@code{do}语句的条件总是一个表达式。
+
+@item EMPTY_CLASS_EXPR
+@en Used to represent a temporary object of a class with no data whose
+@en address is never taken.  (All such objects are interchangeable.)  The
+@en @code{TREE_TYPE} represents the type of the object.
+用来表示类的临时对象。（所有这样的对象都是可互换的。）
+@code{TREE_TYPE}表示对象的类型。
+
+@item EXPR_STMT
+@en Used to represent an expression statement.  Use @code{EXPR_STMT_EXPR} to
+@en obtain the expression.
+用来表示表达式语句。使用@code{EXPR_STMT_EXPR}来获得表达式。
+
+@item FOR_STMT
+@en Used to represent a @code{for} statement.  The @code{FOR_INIT_STMT} is
+@en the initialization statement for the loop.  The @code{FOR_COND} is the
+@en termination condition.  The @code{FOR_EXPR} is the expression executed
+@en right before the @code{FOR_COND} on each loop iteration; often, this
+@en expression increments a counter.  The body of the loop is given by
+@en @code{FOR_BODY}.  Note that @code{FOR_INIT_STMT} and @code{FOR_BODY}
+@en return statements, while @code{FOR_COND} and @code{FOR_EXPR} return
+@en expressions.
+用来表示一条@code{for}语句。@code{FOR_INIT_STMT}是循环的初始语句。
+@code{FOR_COND}是终止条件。
+@code{FOR_INIT_STMT}是在每次循环迭代@code{FOR_COND}之前执行的表达式，
+该表达式常常是增加计数器。循环体由@code{FOR_BODY}给出。
+注意@code{FOR_INIT_STMT}和@code{FOR_BODY}返回语句，
+而@code{FOR_COND}和@code{FOR_EXPR}返回表达式。
+
+@item HANDLER
+@en Used to represent a C++ @code{catch} block.  The @code{HANDLER_TYPE}
+@en is the type of exception that will be caught by this handler; it is
+@en equal (by pointer equality) to @code{NULL} if this handler is for all
+@en types.  @code{HANDLER_PARMS} is the @code{DECL_STMT} for the catch
+@en parameter, and @code{HANDLER_BODY} is the code for the block itself.
+用来表示C++ @code{catch}块。@code{HANDLER_TYPE}是由该处理者捕捉的异常类型。
+如果该处理者是针对所有类型的，则等于（指针等于）@code{NULL}。
+@code{HANDLER_PARMS}是@code{catch}参数，是一个@code{DECL_STMT}。
+@code{HANDLER_BODY}是块本身的代码。 
+
+@item IF_STMT
+@en Used to represent an @code{if} statement.  The @code{IF_COND} is the
+@en expression.
+用来表示一条@code{if}语句。@code{IF_COND}是表达式。
+
+@en If the condition is a @code{TREE_LIST}, then the @code{TREE_PURPOSE} is
+@en a statement (usually a @code{DECL_STMT}).  Each time the condition is
+@en evaluated, the statement should be executed.  Then, the
+@en @code{TREE_VALUE} should be used as the conditional expression itself.
+@en This representation is used to handle C++ code like this:
+如果条件是一个@code{TREE_LIST}，
+则@code{TREE_PURPOSE}是一条语句（通常为 @code{DECL_STMT}）。
+每次评估条件的时候，都要执行该语句。
+然后，@code{TREE_VALUE}应该作为条件表达式本身来使用。
+该表示用来处理C++代码，如：
+
+C++ distinguishes between this and @code{COND_EXPR} for handling templates.
+
+@smallexample
+if (int i = 7) @dots{}
+@end smallexample
+
+@en where there is a new local variable (or variables) declared within the
+@en condition.
+其中，在条件中声明了一个（或多个）新的局部变量。
+
+The @code{THEN_CLAUSE} represents the statement given by the @code{then}
+condition, while the @code{ELSE_CLAUSE} represents the statement given
+by the @code{else} condition.
+
+@item SUBOBJECT
+@en In a constructor, these nodes are used to mark the point at which a
+@en subobject of @code{this} is fully constructed.  If, after this point, an
+@en exception is thrown before a @code{CTOR_STMT} with @code{CTOR_END_P} set
+@en is encountered, the @code{SUBOBJECT_CLEANUP} must be executed.  The
+@en cleanups must be executed in the reverse order in which they appear.
+在构造函数中，这些节点用来标记在某一点子对象被完全构造。如果，这一点之后，在遇到设置了@code{CTOR_END_P}的@code{CTOR_STMT}之前，有异常抛出，则必须执行@code{SUBOBJECT_CLEANUP}。清除工作必须按照它们出现的顺序反向执行。
+
+@item SWITCH_STMT
+@en Used to represent a @code{switch} statement.  The @code{SWITCH_STMT_COND}
+@en is the expression on which the switch is occurring.  See the documentation
+@en for an @code{IF_STMT} for more information on the representation used
+@en for the condition.  The @code{SWITCH_STMT_BODY} is the body of the switch
+@en statement.   The @code{SWITCH_STMT_TYPE} is the original type of switch
+@en expression as given in the source, before any compiler conversions.
+用来表示一个@code{switch}语句。
+@code{SWITCH_STMT_COND}是发生@code{switch}的表达式。
+更多关于条件表示的信息，参见@code{IF_STMT}文档。
+@code{SWITCH_STMT_BODY}是@code{switch}语句主体。
+@code{SWITCH_STMT_TYPE}是源代码中给出的@code{switch}表达式的，
+在任何编译器转换之前的原始类型。
+
+@item TRY_BLOCK
+@en Used to represent a @code{try} block.  The body of the try block is
+@en given by @code{TRY_STMTS}.  Each of the catch blocks is a @code{HANDLER}
+@en node.  The first handler is given by @code{TRY_HANDLERS}.  Subsequent
+@en handlers are obtained by following the @code{TREE_CHAIN} link from one
+@en handler to the next.  The body of the handler is given by
+@en @code{HANDLER_BODY}.
+用来表示一个@code{try}块。@code{try}块的主体由@code{TRY_STMTS}给出。
+每个@code{catch}块都是一个@code{HANDLER}节点。
+第一个@code{handler}由 @code{TRY_HANDLERS}给出。
+后续的@code{handlers}可以通过@code{TREE_CHAIN}获得。
+@code{handler}的主体由@code{HANDLER_BODY}给出。
+
+@en If @code{CLEANUP_P} holds of the @code{TRY_BLOCK}, then the
+@en @code{TRY_HANDLERS} will not be a @code{HANDLER} node.  Instead, it will
+@en be an expression that should be executed if an exception is thrown in
+@en the try block.  It must rethrow the exception after executing that code.
+@en And, if an exception is thrown while the expression is executing,
+@en @code{terminate} must be called.
+如果@code{CLEANUP_P}持有@code{TRY_BLOCK}，
+则@code{TRY_HANDLERS}将不是一个@code{HANDLER}节点。
+相反的，其将会是一个表达式，并且如果在@code{try}块中抛出异常时则被执行。
+其必须在执行完那些代码之后再重新抛出异常。
+并且，如果当表达式正在执行的时候，如果有异常抛出，则必须终止。
+
+@item USING_STMT
+@en Used to represent a @code{using} directive.  The namespace is given by
+@en @code{USING_STMT_NAMESPACE}, which will be a NAMESPACE_DECL@.  This node
+@en is needed inside template functions, to implement using directives
+@en during instantiation.
+用来表示@code{using}指示符。命名空间为一个NAMESPACE_DECL，
+由@code{USING_STMT_NAMESPACE}给出。该节点在模板函数内部需要，
+用来在实例化时实现@code{using}指示符。
+
+@item WHILE_STMT
+@en Used to represent a @code{while} loop.  The @code{WHILE_COND} is the
+@en termination condition for the loop.  See the documentation for an
+@en @code{IF_STMT} for more information on the representation used for the
+@en condition.
+用来表示一个@code{while}循环。@code{WHILE_COND}是循环的终止条件。
+关于用来表示条件的更多信息，参见@code{IF_STMT}的文档。
+
+@en The @code{WHILE_BODY} is the body of the loop.
+@code{WHILE_BODY}是循环体。
+
+@end table
+
+@en @node C++ Expressions
+@en @subsection C++ Expressions
+@node C++ Expressions
+@subsection C++表达式
+
+@en This section describes expressions specific to the C and C++ front
+@en ends.
+这一章节描述了C和C++前端特定的表达式。
+
+@table @code
+@item TYPEID_EXPR
+@en Used to represent a @code{typeid} expression.
+用来表示@code{typeid}表达式。
+
+@item NEW_EXPR
+@itemx VEC_NEW_EXPR
+@en Used to represent a call to @code{new} and @code{new[]} respectively.
+分别用来表示对@code{new}和@code{new[]}的调用。
+
+@item DELETE_EXPR
+@itemx VEC_DELETE_EXPR
+@en Used to represent a call to @code{delete} and @code{delete[]} respectively.
+分别用来表示对@code{delete}和@code{delete[]}的调用。
+
+@item MEMBER_REF
+@en Represents a reference to a member of a class.
+表示对类的成员的引用。
+
+@item THROW_EXPR
+@en Represents an instance of @code{throw} in the program.  Operand 0,
+@en which is the expression to throw, may be @code{NULL_TREE}.
+表示程序中@code{throw}的实例。操作数0，为要抛出的表达式，可以为@code{NULL_TREE}。
+
+@item AGGR_INIT_EXPR
+@en An @code{AGGR_INIT_EXPR} represents the initialization as the return
+@en value of a function call, or as the result of a constructor.  An
+@en @code{AGGR_INIT_EXPR} will only appear as a full-expression, or as the
+@en second operand of a @code{TARGET_EXPR}.  @code{AGGR_INIT_EXPR}s have
+@en a representation similar to that of @code{CALL_EXPR}s.  You can use
+@en the @code{AGGR_INIT_EXPR_FN} and @code{AGGR_INIT_EXPR_ARG} macros to access
+@en the function to call and the arguments to pass.
+@code{AGGR_INIT_EXPR}表示作为函数调用的返回值或者作为构造函数的结果的初始化。
+@code{AGGR_INIT_EXPR}只作为充分表达式出现，
+或作为@code{TARGET_EXPR}的第二个操作数。
+@code{AGGR_INIT_EXPR}具有跟@code{CALL_EXPR}类似的表示。
+可以使用@code{AGGR_INIT_EXPR_FN}和@code{AGGR_INIT_EXPR_ARG}宏来访问调用的函数，
+以及传递的参数。
+
+@en If @code{AGGR_INIT_VIA_CTOR_P} holds of the @code{AGGR_INIT_EXPR}, then
+@en the initialization is via a constructor call.  The address of the
+@en @code{AGGR_INIT_EXPR_SLOT} operand, which is always a @code{VAR_DECL},
+@en is taken, and this value replaces the first argument in the argument
+@en list.
+如果@code{AGGR_INIT_VIA_CTOR_P}持有@code{AGGR_INIT_EXPR}，
+则初始化是通过一个构造函数进行的。@code{AGGR_INIT_EXPR_SLOT}操作数的地址，
+其总是一个@code{VAR_DECL}，将被接受，并且该值替代参数列表中的第一个参数。
+
+@en In either case, the expression is void.
+在这两种情况下，表达式都是void的。
+
+@end table
+
+
+@node Java Trees
+@section Java Trees

@@ -1,0 +1,628 @@
+@c Copyright (C) 2002, 2003, 2004, 2007, 2008, 2009, 2010
+@c Free Software Foundation, Inc.
+@c This is part of the GCC manual.
+@c For copying conditions, see the file gcc.texi.
+
+@en @node Type Information
+@en @chapter Memory Management and Type Information
+@node Type Information
+@chapter 内存管理和类型信息
+@cindex GGC
+@findex GTY
+
+@en GCC uses some fairly sophisticated memory management techniques, which
+@en involve determining information about GCC's data structures from GCC's
+@en source code and using this information to perform garbage collection and
+@en implement precompiled headers.
+GCC使用了一些相当复杂微妙的内存管理技术，包括从GCC源代码中确定GCC的数据结构的信息，并使用该信息来执行垃圾收集和实现预编译头文件。
+
+@en A full C parser would be too complicated for this task, so a limited
+@en subset of C is interpreted and special markers are used to determine
+@en what parts of the source to look at.  All @code{struct} and
+@en @code{union} declarations that define data structures that are
+@en allocated under control of the garbage collector must be marked.  All
+@en global variables that hold pointers to garbage-collected memory must
+@en also be marked.  Finally, all global variables that need to be saved
+@en and restored by a precompiled header must be marked.  (The precompiled
+@en header mechanism can only save static variables if they're scalar.
+@en Complex data structures must be allocated in garbage-collected memory
+@en to be saved in a precompiled header.)
+使用完整的C解析器来完成这项工作会非常复杂，因此只需要解析C的限定子集，并且使用特定的标记来确定源代码的哪些部分需要分析。所有的@code{struct}和@code{union}声明，如果所定义的数据结构要在垃圾收集器的控制下进行分配，则必须被标记。所有的全局变量，如果所保存的指针是指向垃圾收集的内存，则也必须被标记。最后，所有的全局变量，如果需要通过预编译头文件来保存和恢复，则必须被标记。（预编译头文件机制只能保存标量，复杂的数据结构必须被分配在垃圾收集内存中，从而被保存在预编译头文件中。）
+
+@en The full format of a marker is
+标记的完整格式是
+
+@smallexample
+GTY (([@var{option}] [(@var{param})], [@var{option}] [(@var{param})] @dots{}))
+@end smallexample
+@noindent
+@en but in most cases no options are needed.  The outer double parentheses
+@en are still necessary, though: @code{GTY(())}.  Markers can appear:
+不过大多数情况下，不需要选项。虽然这样，外面的双括号依然是必须的：@code{GTY(())}。标记可以出现在：
+
+@itemize @bullet
+@item
+@en In a structure definition, before the open brace;
+在结构体定义中，放在开括号之前；
+@item
+@en In a global variable declaration, after the keyword @code{static} or
+@en @code{extern}; and
+在全局变量声明中，放在关键词 @code{static} 或者 @code{extern} 之后；
+@item
+@en In a structure field definition, before the name of the field.
+在结构体的域的定义里，在域的名字之前。
+@end itemize
+
+@en Here are some examples of marking simple data structures and globals.
+这里有一些标记简单数据结构和全局变量的例子。
+
+@smallexample
+struct GTY(()) @var{tag}
+@{
+  @var{fields}@dots{}
+@};
+
+typedef struct GTY(()) @var{tag}
+@{
+  @var{fields}@dots{}
+@} *@var{typename};
+
+static GTY(()) struct @var{tag} *@var{list};   /* @r{points to GC memory} */
+static GTY(()) int @var{counter};        /* @r{save counter in a PCH} */
+@end smallexample
+
+@en The parser understands simple typedefs such as
+@en @code{typedef struct @var{tag} *@var{name};} and
+@en @code{typedef int @var{name};}.
+@en These don't need to be marked.
+解析器能够理解简单的typedef，例如@code{typedef struct @var{tag} *@var{name};}和@code{typedef int @var{name};}。这些不需要被标记。
+
+@en @menu
+@en * GTY Options::         What goes inside a @code{GTY(())}.
+@en * GGC Roots::           Making global variables GGC roots.
+@en * Files::               How the generated files work.
+@en * Invoking the garbage collector::   How to invoke the garbage collector.
+@en * Troubleshooting::     When something does not work as expected.
+@en @end menu
+@menu
+* GTY Options::			@code{GTY(())}的内部
+* GGC Roots::			标记全局变量GGC roots
+* Files::			生成的文件是如何工作的
+* Invoking the garbage collector::   如何调用垃圾收集器
+* Troubleshooting::		当出现和预期不一样的情况时
+@end menu
+
+@en @node GTY Options
+@en @section The Inside of a @code{GTY(())}
+@node GTY Options
+@section @code{GTY(())}的内部
+
+@en Sometimes the C code is not enough to fully describe the type
+@en structure.  Extra information can be provided with @code{GTY} options
+@en and additional markers.  Some options take a parameter, which may be
+@en either a string or a type name, depending on the parameter.  If an
+@en option takes no parameter, it is acceptable either to omit the
+@en parameter entirely, or to provide an empty string as a parameter.  For
+@en example, @code{@w{GTY ((skip))}} and @code{@w{GTY ((skip ("")))}} are
+@en equivalent.
+有时候C代码不足以完全描述类型结构体，这时可以使用@code{GTY}选项和额外标记来提供额外的信息。一些选项接受一个参数，其可以为字符串或者类型名。如果一个选项不需要参数，则可以完全省略参数，或者提供一个空字符串作为参数。例如，@code{@w{GTY ((skip))}}和@code{@w{GTY ((skip("")))}}是等价的。
+
+@en When the parameter is a string, often it is a fragment of C code.  Four
+@en special escapes may be used in these strings, to refer to pieces of
+@en the data structure being marked:
+当参数为字符串时，通常为一个C代码片段。有四种特定的转义符可以在字符串中使用，用来指定被标记的数据结构体部分：
+
+@cindex % in GTY option
+@table @code
+@item %h
+@en The current structure.
+当前结构体。 
+@item %1
+@en The structure that immediately contains the current structure.
+直接包含当前结构体的结构体。 
+@item %0
+@en The outermost structure that contains the current structure.
+包含当前结构体的最外层结构体。 
+@item %a
+@en A partial expression of the form @code{[i1][i2]@dots{}} that indexes
+@en the array item currently being marked.
+@code{[i1][i2]@dots{}}形式的部分表达式，用来索引当前被标记的数组项。
+@end table
+
+@en For instance, suppose that you have a structure of the form
+例如，假设有一个结构体
+@smallexample
+struct A @{
+  @dots{}
+@};
+struct B @{
+  struct A foo[12];
+@};
+@end smallexample
+@noindent
+@en and @code{b} is a variable of type @code{struct B}.  When marking
+@en @samp{b.foo[11]}, @code{%h} would expand to @samp{b.foo[11]},
+@en @code{%0} and @code{%1} would both expand to @samp{b}, and @code{%a}
+@en would expand to @samp{[11]}.
+并且@code{b}是@code{struct B}类型的变量。当标记@samp{b.foo[11]}时，@code{%h}将扩展为@samp{b.foo[11]}，@code{%0}和@code{%1}都会扩展为@samp{b}，@code{%a}会扩展为@samp{[11]}。
+
+@en As in ordinary C, adjacent strings will be concatenated; this is
+@en helpful when you have a complicated expression.
+和普通的C一样，相邻的字符串会被连接；这对于复杂的表达式是有帮助的。
+
+@smallexample
+@group
+GTY ((chain_next ("TREE_CODE (&%h.generic) == INTEGER_TYPE"
+                  " ? TYPE_NEXT_VARIANT (&%h.generic)"
+                  " : TREE_CHAIN (&%h.generic)")))
+@end group
+@end smallexample
+
+@en The available options are:
+可用的选项：
+
+@table @code
+@findex length
+@item length ("@var{expression}")
+
+@en There are two places the type machinery will need to be explicitly told
+@en the length of an array.  The first case is when a structure ends in a
+@en variable-length array, like this:
+有两个地方需要显式的告诉类型系统一个数组的长度。第一种情况是当结构体结束于一个可变长度数组，像这样： 
+@smallexample
+struct GTY(()) rtvec_def @{
+  int num_elem;         /* @r{number of elements} */
+  rtx GTY ((length ("%h.num_elem"))) elem[1];
+@};
+@end smallexample
+
+@en In this case, the @code{length} option is used to override the specified
+@en array length (which should usually be @code{1}).  The parameter of the
+@en option is a fragment of C code that calculates the length.
+在这种情况下，@code{length}选项用来覆盖指定数组的长度（通常本应该为@code{1}）。选项的参数是用来计算长度的C代码片断。
+
+@en The second case is when a structure or a global variable contains a
+@en pointer to an array, like this:
+第二种情况是当结构体或者全局变量包含一个指向数组的指针，像这样：
+@smallexample
+struct gimple_omp_for_iter * GTY((length ("%h.collapse"))) iter;
+@end smallexample
+@en In this case, @code{iter} has been allocated by writing something like
+在这种情况下，@code{iter}已经通过类似下面的方式被分配：
+@smallexample
+  x->iter = ggc_alloc_cleared_vec_gimple_omp_for_iter (collapse);
+@end smallexample
+@en and the @code{collapse} provides the length of the field.
+并且@code{collapse}提供了指定域的长度。
+
+@en This second use of @code{length} also works on global variables, like:
+@code{lenght}的第二种用法还包括在全局变量上，像这样：
+@verbatim
+static GTY((length("reg_known_value_size"))) rtx *reg_known_value;
+@end verbatim
+
+@findex skip
+@item skip
+
+@en If @code{skip} is applied to a field, the type machinery will ignore it.
+@en This is somewhat dangerous; the only safe use is in a union when one
+@en field really isn't ever used.
+如果@code{skip}应用在一个域上，则类型机构将会忽略该域。这有些危险；唯一安全的使用方式是在一个联合体中，当一个域确实不会被使用到的时候。 
+
+@findex desc
+@findex tag
+@findex default
+@item desc ("@var{expression}")
+@itemx tag ("@var{constant}")
+@itemx default
+
+@en The type machinery needs to be told which field of a @code{union} is
+@en currently active.  This is done by giving each field a constant
+@en @code{tag} value, and then specifying a discriminator using @code{desc}.
+@en The value of the expression given by @code{desc} is compared against
+@en each @code{tag} value, each of which should be different.  If no
+@en @code{tag} is matched, the field marked with @code{default} is used if
+@en there is one, otherwise no field in the union will be marked.
+类型系统需要知道@code{union}的哪一个域是当前活跃的。这是通过赋给每个域一个常数@code{tag}值，并且使用@code{desc}指定一个判别器来完成的。由@code{desc}给出的表达式的值用来与每个@code{tag}值比较，每个@code{tag}值应该不同。如果没有@code{tag}匹配，则会使用标记为@code{default}的域。
+
+@en In the @code{desc} option, the ``current structure'' is the union that
+@en it discriminates.  Use @code{%1} to mean the structure containing it.
+@en There are no escapes available to the @code{tag} option, since it is a
+@en constant.
+在@code{desc}选项中，“当前结构体”是指要进行判别的联合体，可以使用@code{%1}来指定。@code{tag}选项为常数，不可以使用转义符。
+
+@en For example,
+例如,
+
+@smallexample
+struct GTY(()) tree_binding
+@{
+  struct tree_common common;
+  union tree_binding_u @{
+    tree GTY ((tag ("0"))) scope;
+    struct cp_binding_level * GTY ((tag ("1"))) level;
+  @} GTY ((desc ("BINDING_HAS_LEVEL_P ((tree)&%0)"))) xscope;
+  tree value;
+@};
+@end smallexample
+
+@en In this example, the value of BINDING_HAS_LEVEL_P when applied to a
+@en @code{struct tree_binding *} is presumed to be 0 or 1.  If 1, the type
+@en mechanism will treat the field @code{level} as being present and if 0,
+@en will treat the field @code{scope} as being present.
+在这个例子中，当BINDING_HAS_LEVEL_P应用到@code{struct tree_binding*}时，其值会被假设为0或者1。如果是1，类型系统则会认为域@code{level}存在，如果是0，则会认为域@code{scope}存在。
+
+@findex param_is
+@findex use_param
+@item param_is (@var{type})
+@itemx use_param
+
+@en Sometimes it's convenient to define some data structure to work on
+@en generic pointers (that is, @code{PTR}) and then use it with a specific
+@en type.  @code{param_is} specifies the real type pointed to, and
+@en @code{use_param} says where in the generic data structure that type
+@en should be put.
+有时候，定义某种数据结构作为通用指针（也就是@code{PTR}），并且与特定类型一起使用是比较方便的。@code{param_is}指定了所指向的真正类型，@code{use_param}说明了该类型应该放在通用数据结构的哪个地方。
+
+@en For instance, to have a @code{htab_t} that points to trees, one would
+@en write the definition of @code{htab_t} like this:
+例如，为了让@code{htab_t}指向trees，则应该像这样来写@code{htab_t}的定义：
+
+@smallexample
+typedef struct GTY(()) @{
+  @dots{}
+  void ** GTY ((use_param, @dots{})) entries;
+  @dots{}
+@} htab_t;
+@end smallexample
+@en and then declare variables like this:
+然后按这种方式声明变量：
+@smallexample
+  static htab_t GTY ((param_is (union tree_node))) ict;
+@end smallexample
+
+@findex param@var{n}_is
+@findex use_param@var{n}
+@item param@var{n}_is (@var{type})
+@itemx use_param@var{n}
+
+@en In more complicated cases, the data structure might need to work on
+@en several different types, which might not necessarily all be pointers.
+@en For this, @code{param1_is} through @code{param9_is} may be used to
+@en specify the real type of a field identified by @code{use_param1} through
+@code{use_param9}.
+在更复杂的情况下，数据结构可能需要工作在多个不同类型之上，而且这些类型也不必都是指针。对于这样的，可以使用@code{param1_is}到@code{param9_is}来指定由@code{use_param1}到@code{use_param9}标识的实际类型域。
+
+@findex use_params
+@item use_params
+
+@en When a structure contains another structure that is parameterized,
+@en there's no need to do anything special, the inner structure inherits the
+@en parameters of the outer one.  When a structure contains a pointer to a
+@en parameterized structure, the type machinery won't automatically detect
+@en this (it could, it just doesn't yet), so it's necessary to tell it that
+@en the pointed-to structure should use the same parameters as the outer
+@en structure.  This is done by marking the pointer with the
+@en @code{use_params} option.
+当结构体包含另一个参数化的结构体时，不需要做特别的处理，内部结构体会继承外部的参数。当结构体包含指向一个参数化的结构体的指针时，类型机构不会自动检测到（是应该可以的，只是还没有实现），所以需要告诉类型系统所指向的结构体将使用外部结构体的相同参数。这可以通过使用@code{usr_params}选项来标识指针。
+
+@findex deletable
+@item deletable
+
+@en @code{deletable}, when applied to a global variable, indicates that when
+@en garbage collection runs, there's no need to mark anything pointed to
+@en by this variable, it can just be set to @code{NULL} instead.  This is used
+@en to keep a list of free structures around for re-use.
+将@code{deletable}应用到全局变量上时，表示当垃圾收集运行时，不需要标记由该变量指向的任何对象，可以只是将其设为@code{NULL}。这可以用来维护一个可以重用的空闲结构体列表。
+
+@findex if_marked
+@item if_marked ("@var{expression}")
+
+@en Suppose you want some kinds of object to be unique, and so you put them
+@en in a hash table.  If garbage collection marks the hash table, these
+@en objects will never be freed, even if the last other reference to them
+@en goes away.  GGC has special handling to deal with this: if you use the
+@en @code{if_marked} option on a global hash table, GGC will call the
+@en routine whose name is the parameter to the option on each hash table
+@en entry.  If the routine returns nonzero, the hash table entry will
+@en be marked as usual.  If the routine returns zero, the hash table entry
+@en will be deleted.
+假设你想要一些类别的对象是唯一的，并且为此你将它们放在了哈希表中。如果垃圾搜集标记了哈希表，这些对象将永远不会被释放掉，即使最后一个引用也不存在。对此GCC有特定的处理方式：如果你使用@code{if_marked}选项在一个全局哈希表上，GCC将会对每个哈希表项调用该选项参数命名的函数。如果函数返回非0，哈希表项将按照通常的方式被标记，如果返回0，则哈希表项将会被删除。 
+
+@en The routine @code{ggc_marked_p} can be used to determine if an element
+@en has been marked already; in fact, the usual case is to use
+@en @code{if_marked ("ggc_marked_p")}.
+函数@code{ggc_marded_p}可以用来判断一个元素是否已经被标记。实际上，通常的情况是使用@code{if_marked ("ggc_marked_p")}。
+
+@findex mark_hook
+@item mark_hook ("@var{hook-routine-name}")
+
+@en If provided for a structure or union type, the given
+@en @var{hook-routine-name} (between double-quotes) is the name of a
+@en routine called when the garbage collector has just marked the data as
+@en reachable. This routine should not change the data, or call any ggc
+@en routine. Its only argument is a pointer to the just marked (const)
+@en structure or union.
+如果用在结构体或者联合体类型上，给出的（双引号之间的）@var{hook-routine-name}则为一个函数名，其在垃圾搜集器刚刚标记数据为可达（reachable）时会被调用。该函数不应该改变数据，或者调用任何ggc函数。它的唯一参数是一个指向刚刚被标记的结构体或联合体的指针。
+
+@findex maybe_undef
+@item maybe_undef
+
+@en When applied to a field, @code{maybe_undef} indicates that it's OK if
+@en the structure that this fields points to is never defined, so long as
+@en this field is always @code{NULL}.  This is used to avoid requiring
+@en backends to define certain optional structures.  It doesn't work with
+@en language frontends.
+当应用到一个域时，@code{maybe_undef}表示可以允许该域所指向的结构体没有被定义，只要该域总是为@code{NULL}。这可以用来避免要求后端去定义一些可选的结构体。该选项对语言前端不起作用。
+
+@findex nested_ptr
+@item nested_ptr (@var{type}, "@var{to expression}", "@var{from expression}")
+
+@en The type machinery expects all pointers to point to the start of an
+@en object.  Sometimes for abstraction purposes it's convenient to have
+@en a pointer which points inside an object.  So long as it's possible to
+@en convert the original object to and from the pointer, such pointers
+@en can still be used.  @var{type} is the type of the original object,
+@en the @var{to expression} returns the pointer given the original object,
+@en and the @var{from expression} returns the original object given
+@en the pointer.  The pointer will be available using the @code{%h}
+@en escape.
+类型系统期望所有指针都指向一个对象的起始处。有时候出于抽象目的，使用指向对象内部的指针是比较方便的。只要能够对原始对象和指针进行相互转换，这样的指针还是可以使用的。@var{type}是原始对象的类型，@var{to expression}返回给定原始对象的指针，@var{from expression}返回给定指针的原始对象。指针可以使用@code{%h}转义符得到。
+
+@findex chain_next
+@findex chain_prev
+@findex chain_circular
+@item chain_next ("@var{expression}")
+@itemx chain_prev ("@var{expression}")
+@itemx chain_circular ("@var{expression}")
+
+@en It's helpful for the type machinery to know if objects are often
+@en chained together in long lists; this lets it generate code that uses
+@en less stack space by iterating along the list instead of recursing down
+@en it.  @code{chain_next} is an expression for the next item in the list,
+@en @code{chain_prev} is an expression for the previous item.  For singly
+@en linked lists, use only @code{chain_next}; for doubly linked lists, use
+@en both.  The machinery requires that taking the next item of the
+@en previous item gives the original item.  @code{chain_circular} is similar
+@en to @code{chain_next}, but can be used for circular single linked lists.
+让类型系统知道对象是否经常被链接在长的链表中是有帮助的。这可以让其使用遍历链表的方式来替代递归调用，从而使得生成的代码使用很少的栈空间。@code{chain_next}是链表中的下一项，@code{chain_prev}是前一项。对于单向链表，只使用@code{chain_next}；对于双向链表，两者都使用。类型系统要求对一个项求@code{chain_prev}，然后 @code{chain_next}，可以得到原始的项。
+
+@findex reorder
+@item reorder ("@var{function name}")
+
+@en Some data structures depend on the relative ordering of pointers.  If
+@en the precompiled header machinery needs to change that ordering, it
+@en will call the function referenced by the @code{reorder} option, before
+@en changing the pointers in the object that's pointed to by the field the
+@en option applies to.  The function must take four arguments, with the
+@en signature @samp{@w{void *, void *, gt_pointer_operator, void *}}.
+@en The first parameter is a pointer to the structure that contains the
+@en object being updated, or the object itself if there is no containing
+@en structure.  The second parameter is a cookie that should be ignored.
+@en The third parameter is a routine that, given a pointer, will update it
+@en to its correct new value.  The fourth parameter is a cookie that must
+@en be passed to the second parameter.
+一些数据结构依赖于相应的指针顺序。如果预编译头文件系统需要改变顺序，其将会调用由@code{reorder}选项指定的函数。函数必须接收4个参数，@samp{@w{void *, void *, gt_pointer_operator, void *}}。第一个参数是指向更新对象的结构体的指针，或者对象本身，如果没有包含的结构体。第二个参数为一个cookie，目前被忽略。第三个参数是一个函数，给定指针，将会更新该指针为正确的新值。第四个参数是一个cookie，且必须传给第二个参数。
+
+@en PCH cannot handle data structures that depend on the absolute values
+@en of pointers.  @code{reorder} functions can be expensive.  When
+@en possible, it is better to depend on properties of the data, like an ID
+@en number or the hash of a string instead.
+PCH无法处理依赖于指针绝对值的数据结构。@code{reorder}函数代价很高。在可能的情况下，最好依赖于数据的属性，像ID号或者字符串的哈希值。
+
+@findex variable_size
+@item variable_size
+
+@en The type machinery expects the types to be of constant size.  When this
+@en is not true, for example, with structs that have array fields or unions,
+@en the type machinery cannot tell how many bytes need to be allocated at
+@en each allocation.  The @code{variable_size} is used to mark such types.
+@en The type machinery then provides allocators that take a parameter
+@en indicating an exact size of object being allocated.  Note that the size
+@en must be provided in bytes whereas the @code{length} option works with
+@en array lengths in number of elements.
+类型系统期望类型是常数大小的。如果不这样，例如，对于具有数组域或者联合体域的结构体，类型系统则无法得知每次需要分配多少字节。@code{variable_size}用来标记这样的类型。类型系统则会提供一个分配器，接收一个参数，用来指示要被分配的对象的具体大小。注意，必须是字节为单位的大小，而@code{length}选项是用于数组长度，即元素个数。
+
+@en For example,
+例如，
+@smallexample
+struct GTY((variable_size)) sorted_fields_type @{
+  int len;
+  tree GTY((length ("%h.len"))) elts[1];
+@};
+@end smallexample
+
+@en Then the objects of @code{struct sorted_fields_type} are allocated in GC 
+@en memory as follows:
+则@code{struct sorted_fields_type}类型的对象在GC内存中会按照如下方式被分配：
+@smallexample
+  field_vec = ggc_alloc_sorted_fields_type (size);
+@end smallexample
+
+@en If @var{field_vec->elts} stores @var{n} elements, then @var{size}
+@en could be calculated as follows:
+如果@var{field_vec->elts}存储了@var{n}个元素，则@var{size}可以按照如下方式来计算：
+@smallexample
+  size_t size = sizeof (struct sorted_fields_type) + n * sizeof (tree);
+@end smallexample
+
+@findex special
+@item special ("@var{name}")
+
+@en The @code{special} option is used to mark types that have to be dealt
+@en with by special case machinery.  The parameter is the name of the
+@en special case.  See @file{gengtype.c} for further details.  Avoid
+@en adding new special cases unless there is no other alternative.
+@code{special}选项用来标记类型必须由特定情况的机制来处理。参数是特定情况的名字。详细信息参见@file{gengtype.c}。应避免添加新的特定情况，除非没有别的办法。
+@end table
+
+@en @node GGC Roots
+@en @section Marking Roots for the Garbage Collector
+@node GGC Roots
+@section 为垃圾收集器标记Roots
+@cindex roots, marking
+@cindex marking roots
+
+@en In addition to keeping track of types, the type machinery also locates
+@en the global variables (@dfn{roots}) that the garbage collector starts
+@en at.  Roots must be declared using one of the following syntaxes:
+除了追踪类型信息，类型系统还需要定位全局变量（@dfn{roots}），作为垃圾搜集器开始的地方。Roots必须按照下面的语法之一来声明：
+
+@itemize @bullet
+@item
+@code{extern GTY(([@var{options}])) @var{type} @var{name};}
+@item
+@code{static GTY(([@var{options}])) @var{type} @var{name};}
+@end itemize
+@noindent
+@en The syntax
+语法
+@itemize @bullet
+@item
+@code{GTY(([@var{options}])) @var{type} @var{name};}
+@end itemize
+@noindent
+
+@en is @emph{not} accepted.  There should be an @code{extern} declaration
+@en of such a variable in a header somewhere---mark that, not the
+@en definition.  Or, if the variable is only used in one file, make it
+@en @code{static}.
+是@emph{不}被接受的。对于这样的变量，应该在某个头文件中存在一个@code{extern}声明——可以在那里标记，而不要在它的定义中标记。或者，如果变量只在一个文件中使用，则将其定义为@code{static}。
+
+@en @node Files
+@en @section Source Files Containing Type Information
+@node Files
+@section 包含类型信息的源文件
+@cindex generated files
+@cindex files, generated
+
+@en Whenever you add @code{GTY} markers to a source file that previously
+@en had none, or create a new source file containing @code{GTY} markers,
+@en there are three things you need to do:
+只要向之前没有@code{GTY}标记的源文件里添加@code{GTY}标记，或者创建一个新的包含@code{GTY}标记的源文件，那么就有三件事情需要做：
+
+@enumerate
+@item
+@en You need to add the file to the list of source files the type
+@en machinery scans.  There are four cases:
+需要将文件添加到类型系统要扫描的源文件列表中。有四种情况： 
+
+@enumerate a
+@item
+@en For a back-end file, this is usually done
+@en automatically; if not, you should add it to @code{target_gtfiles} in
+@en the appropriate port's entries in @file{config.gcc}.
+对于一个后端文件，通常会自动完成。如果没有，则需要将其添加到@file{config.gcc}里相应移植平台的@code{target_gtfiles}中。
+
+@item
+@en For files shared by all front ends, add the filename to the
+@en @code{GTFILES} variable in @file{Makefile.in}.
+对于所用前端共享的文件，将文件名添加到@file{Makefile.in}里的@code{GTFILES}变量中。
+
+@item
+@en For files that are part of one front end, add the filename to the
+@en @code{gtfiles} variable defined in the appropriate
+@en @file{config-lang.in}.  For C, the file is @file{c-config-lang.in}.
+@en Headers should appear before non-headers in this list.
+对于一个前端的文件，将文件名添加到在适当@file{config-lang.in}里定义的@code{gtfiles}变量中。对于C，文件为@file{c-config-lang.in}。
+
+@item
+@en For files that are part of some but not all front ends, add the
+@en filename to the @code{gtfiles} variable of @emph{all} the front ends
+@en that use it.
+对于是一部分而不是所有的前端的文件，将文件名添加到@emph{所有}使用它的前端的@code{gtfiles}变量中。
+@end enumerate
+
+@item
+@en If the file was a header file, you'll need to check that it's included
+@en in the right place to be visible to the generated files.  For a back-end
+@en header file, this should be done automatically.  For a front-end header
+@en file, it needs to be included by the same file that includes
+@en @file{gtype-@var{lang}.h}.  For other header files, it needs to be
+@en included in @file{gtype-desc.c}, which is a generated file, so add it to
+@en @code{ifiles} in @code{open_base_file} in @file{gengtype.c}.
+如果是头文件，则需要检查是否被包含在正确的位置，使得对于生成文件为可见的。对于一个后端文件，这应该是自动完成的。对于前端的头文件，应该被包含@file{gtype-@var{lang}.h}的同一文件所包含。对于其它头文件，需要被包含在@file{gtype-desc.c}中。@file{gtype-desc.c}为生成文件，所以需要将头文件名添加到@file{gengtype.c} 里的@code{open_base_file}里的@code{ifiles}中。
+
+@en For source files that aren't header files, the machinery will generate a
+@en header file that should be included in the source file you just changed.
+@en The file will be called @file{gt-@var{path}.h} where @var{path} is the
+@en pathname relative to the @file{gcc} directory with slashes replaced by
+@en @verb{|-|}, so for example the header file to be included in
+@en @file{cp/parser.c} is called @file{gt-cp-parser.c}.  The
+@en generated header file should be included after everything else in the
+@en source file.  Don't forget to mention this file as a dependency in the
+@en @file{Makefile}!
+对于不是头文件的源文件，类型机构将会生成一个头文件，并且该头文件应该被包含在所修改的源文件中。文件名为 @file{gt-@var{path}.h}，其中@var{path}是相对于@file{gcc}目录的路径名，并且由@verb{|-|}来替换斜线。例如，要被包含在@file{cp/parser.c}中的头文件命名为@file{gt-cp-parser.c}。生成的头文件应该被包含在源文件所有其它内容之后。不要忘记将该文件在@file{Makefile}中作为一个依赖条件！
+
+@end enumerate
+
+@en For language frontends, there is another file that needs to be included
+@en somewhere.  It will be called @file{gtype-@var{lang}.h}, where
+@en @var{lang} is the name of the subdirectory the language is contained in.
+对于语言前端，还有另一个文件需要在某处被包含。其为@file{gtype-@var{lang}.h}，其中@var{lang}是语言子目录的名字。
+
+@en Plugins can add additional root tables.  Run the @code{gengtype}
+@en utility in plugin mode as @code{gengtype -P pluginout.h @var{source-dir}
+@en @var{file-list} @var{plugin*.c}} with your plugin files
+@en @var{plugin*.c} using @code{GTY} to generate the @var{pluginout.h} file.
+@en The GCC build tree is needed to be present in that mode.
+插件可以增加额外的root表。在插件模式下，通过命令@code{gengtype -P pluginout.h @var{source-dir} @var{file-list} @var{plugin*.c}}来运行@code{gengtype}工具，针对使用@code{GTY}的插件文件@var{plugin*.c}，生成@var{pluginout.h}文件。
+
+@en @node Invoking the garbage collector
+@en @section How to invoke the garbage collector
+@node Invoking the garbage collector
+@section 如何调用垃圾收集器
+@cindex garbage collector, invocation
+@findex ggc_collect
+
+@en The GCC garbage collector GGC is only invoked explicitly. In contrast
+@en with many other garbage collectors, it is not implicitly invoked by
+@en allocation routines when a lot of memory has been consumed. So the
+@en only way to have GGC reclaim storage it to call the @code{ggc_collect}
+@en function explicitly.  This call is an expensive operation, as it may
+@en have to scan the entire heap.  Beware that local variables (on the GCC
+@en call stack) are not followed by such an invocation (as many other
+@en garbage collectors do): you should reference all your data from static
+@en or external @code{GTY}-ed variables, and it is advised to call
+@en @code{ggc_collect} with a shallow call stack.  The GGC is an exact mark
+@en and sweep garbage collector (so it does not scan the call stack for
+@en pointers).  In practice GCC passes don't often call @code{ggc_collect}
+@en themselves, because it is called by the pass manager between passes.
+GCC垃圾搜集器GGC只能被显式的调用。相对于其它许多垃圾搜集器，当大量内存被消耗时，其不会被分配程序隐式的调用。所以，让GGC回收存储的唯一方法是显式的调用@code{ggc_collect}函数。该调用的开销很大，可能会扫描整个堆。要注意的是，局部变量（在GCC调用栈上）并不遵循这样的调用（正如许多其它垃圾搜集器一样）：你应该将所有的@code{GTY}变量标记为static或者external，并且建议不要在太深的调用栈中调用@code{ggc_collect}。GGC是一个严格的mark-and-sweep垃圾搜集器（所以，它不会扫描调用栈中的指针）。实际中，GCC passes本身并不经常调用@code{ggc_collect}，而是由pass管理器在pass之间进行调用。
+
+@en At the time of the @code{ggc_collect} call all pointers in the GC-marked
+@en structures must be valid or @code{NULL}.  In practice this means that
+@en there should not be uninitialized pointer fields in the structures even
+@en if your code never reads or writes those fields at a particular
+@en instance.  One way to ensure this is to use cleared versions of
+@en allocators unless all the fields are initialized manually immediately
+@en after allocation.
+在调用@code{ggc_collect}的时候，所有在GC标记的结构体中的指针必须为有效的或者@code{NULL}。实际上，这意味着在结构体中不要有未被初始化的指针域，即使你的代码在特定情况下并不会读写这些域。要确保这种情况不会发生，一种方法是使用分配器的清除版本（cleared versions），除非所有的域在分配之后都被立即手动初始化。
+
+@en @node Troubleshooting
+@en @section Troubleshooting the garbage collector
+@node Troubleshooting
+@section 垃圾分配器相关的疑难解答
+@cindex garbage collector, troubleshooting
+
+@en With the current garbage collector implementation, most issues should
+@en show up as GCC compilation errors.  Some of the most commonly
+@en encountered issues are described below.
+对于现在的垃圾搜集器实现，大部分问题会作为GCC编译错误来出现。下面描述了一些最常见的问题。
+
+@itemize @bullet
+@en @item Gengtype does not produce allocators for a @code{GTY}-marked type.
+@en Gengtype checks if there is at least one possible path from GC roots to
+@en at least one instance of each type before outputting allocators.  If
+@en there is no such path, the @code{GTY} markers will be ignored and no
+@en allocators will be output.  Solve this by making sure that there exists
+@en at least one such path.  If creating it is unfeasible or raises a ``code
+@en smell'', consider if you really must use GC for allocating such type.
+@item Gengtype没有为@code{GTY}标记的类型创建分配器。Gengtype会在输出分配器之前，检查是否至少有一个从GC roots到每个类型的实例之间的路径。如果没有这样的路径，@code{GTY}标记将会被忽略，并且不会输出分配器。解决该问题，需要确保存在至少一条这样的路径。如果创建这样的路径不可行或者会产生代码意味，则需要考虑一下你是否真的必须使用GC来分配该类型。
+
+@en @item Link-time errors about undefined @code{gt_ggc_r_foo_bar} and
+@en similarly-named symbols.  Check if your @file{foo_bar} source file has
+@en @code{#include "gt-foo_bar.h"} as its very last line.
+@item 在链接时出现关于未定义的@code{gt_ggc_r_foo_bar}和类似命名符号的错误。检查一下你的@file{foo_bar}源文件是否将@code{#include "gt-foo_bar.h"}放在了最后一行。
+
+@end itemize
