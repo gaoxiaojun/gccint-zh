@@ -412,16 +412,14 @@ based on the information passed down from the @emph{Execute} stage.
 
 @subsection Virtual clones
 
-@en One of the main challenges of introducing the WHOPR compilation
-@en mode was addressing the interactions between optimization passes.
-@en In LTO compilation mode, the passes are executed in a sequence,
-@en each of which consists of analysis (or @emph{Generate summary}),
-@en propagation (or @emph{Execute}) and @emph{Transform} stages.
-@en Once the work of one pass is finished, the next pass sees the
-@en updated program representation and can execute.  This makes the
-@en individual passes dependent on each other.
-引入WHOPR编译模式的一个主要挑战就是处理由各个优化遍之间的交互带来的问题。在LTO编译模式，所有的优化遍顺序执行，每一个优化遍都由分析阶段(或者@emph{Generate summary})，扩展(或者@emph{Execute})阶段和@emph{转换}阶段组成。一个优化遍的工作完成了，下一个优化遍就看到了更新过了程序表达，然后就执行。这杨就使得每一个优化遍都独立于其它优化遍。
-
+One of the main challenges of introducing the WHOPR compilation
+mode was addressing the interactions between optimization passes.
+In LTO compilation mode, the passes are executed in a sequence,
+each of which consists of analysis (or @emph{Generate summary}),
+propagation (or @emph{Execute}) and @emph{Transform} stages.
+Once the work of one pass is finished, the next pass sees the
+updated program representation and can execute.  This makes the
+individual passes dependent on each other.
 
 In WHOPR mode all passes first execute their @emph{Generate
 summary} stage.  Then summary writing marks the end of the LGEN
@@ -604,40 +602,33 @@ guess based on @option{-fwhole-program}.  Without the linker
 plugin GCC also assumes that symbols are declared @code{hidden}
 and not referred by non-LTO code by default.
 
-@en @section Internal flags controlling @code{lto1}
+@section Internal flags controlling @code{lto1}
 
-@section 控制@code{lto1}的内部标记
-
-@en The following flags are passed into @command{lto1} and are not
-@en meant to be used directly from the command line.
-下边这些标记会传递给@command{lto1}，而且不会直接来自于命令行。
+The following flags are passed into @command{lto1} and are not
+meant to be used directly from the command line.
 
 @itemize
 @item -fwpa
 @opindex fwpa
-@en This option runs the serial part of the link-time optimizer
-@en performing the inter-procedural propagation (WPA mode).  The
-@en compiler reads in summary information from all inputs and
-@en performs an analysis based on summary information only.  It
-@en generates object files for subsequent runs of the link-time
-@en optimizer where individual object files are optimized using both
-@en summary information from the WPA mode and the actual function
-@en bodies.  It then drives the LTRANS phase.
-这个选项运行链接时刻优化器的串行部分，进行过程间扩展（WPA模式）。编译器从所有输入中读入总计信息，并且仅基于这些总计信息进行分析。这个步骤为下边的链接时刻优化器的运行生成了目标文件。链接时刻优化器下边的运行会使用来自WPA模式的总计信息和实际函数体信息进行优化。然后，驱动LTRANS阶段。
-
+This option runs the serial part of the link-time optimizer
+performing the inter-procedural propagation (WPA mode).  The
+compiler reads in summary information from all inputs and
+performs an analysis based on summary information only.  It
+generates object files for subsequent runs of the link-time
+optimizer where individual object files are optimized using both
+summary information from the WPA mode and the actual function
+bodies.  It then drives the LTRANS phase.
 
 @item -fltrans
 @opindex fltrans
-@en This option runs the link-time optimizer in the
-@en local-transformation (LTRANS) mode, which reads in output from a
-@en previous run of the LTO in WPA mode.  In the LTRANS mode, LTO
-@en optimizes an object and produces the final assembly.
-这个选项使得链接时刻优化器运行在局部转换(LTRANS)模式。在这个模式下，链接时刻优化器读入上一遍WPA模式的输出。在LTRANS模式，链接时刻优化器优化完一个目标文件后，生成最后的汇编程序。
+This option runs the link-time optimizer in the
+local-transformation (LTRANS) mode, which reads in output from a
+previous run of the LTO in WPA mode.  In the LTRANS mode, LTO
+optimizes an object and produces the final assembly.
 
 @item -fltrans-output-list=@var{file}
 @opindex fltrans-output-list
-@en This option specifies a file to which the names of LTRANS output
-@en files are written.  This option is only meaningful in conjunction
-@en with @option{-fwpa}.
-这个选项指定了一个文件，用来记录LTRANS输出的文件名。这个选项只有和@option{-fwpa}一起使用才有意义。
+This option specifies a file to which the names of LTRANS output
+files are written.  This option is only meaningful in conjunction
+with @option{-fwpa}.
 @end itemize
