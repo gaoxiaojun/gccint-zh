@@ -1,12 +1,8 @@
 为了方便文档翻译和更新，这里列出了一些需要注意的事项。
 
-== GCCINT-ZH-CONTRIBUTERS ==
+== contrib-zh.texi ==
 
-GCCINT-ZH-CONTRIBUTERS中记录了svn提交者的信息，如果你已经有了svn提交权限，你可以直接将自己的信息添加进去。
-
-== GCCINT-ZH-GLOSSARY ==
-
-GCCINT-ZH-GLOSSARY中列出了中英文对照词汇，用来统一翻译中的术语。欢迎添加，补充。
+contrib-zh.texi中记录了为翻译做出贡献的人员信息，如果你已经有了svn提交权限，你可以直接将自己的信息添加进去。
 
 == 宏命令@xref和@pxref ==
 
