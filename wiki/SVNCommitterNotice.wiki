@@ -12,7 +12,7 @@ contrib-zh.texi中记录了为翻译做出贡献的人员信息，如果你已�
 
 该命令是@c的别名，是一个注释命令，用来标记texi文档中的英语原文。在翻译文档中保留原来的英语原文，并使用@en来注释标记，这样的好处是便于和gcc（特别是trunk）的文档进行对比更新。比如，执行如下命令，
 {{{
-  $ cat collect2.texi | sed 's/@en //' | diff - trunk/gcc/doc/collect2.texi -B | less
+  $ file=md.texi; cat $file | sed 's/@en //' | diff - trunk/gcc/doc/$file -B | less
 }}}
 你将会看到，翻译文档和原文文档之间的差别只有中文翻译，这说明，英语原文是与trunk中的相同。而如果文档之间还有英文差别，则说明，英语原文与trunk中的不同。从而，可以快速的查找到需要更新的地方。
 
